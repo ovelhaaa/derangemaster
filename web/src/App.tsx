@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RangemasterAudioEngine } from './audio/AudioEngine';
 import { decodeAudioFileToMono, extractWaveformPeaks } from './audio/FileSource';
 import { computeFileLevelMatchGains, computeRms, renderWasmSlice } from './audio/LevelMatch';
@@ -92,6 +92,10 @@ export const App: React.FC = () => {
 
   const activeConfig = activeSlot === 'A' ? slotA : slotB;
   const effectiveBypass = pedalBypassed || dryActive;
+  const analysers = useMemo(
+    () => engineRef.current?.getAnalysers() ?? { input: null, preMonitor: null, postMonitor: null },
+    [audioReady]
+  );
 
   useEffect(() => {
     const eng = new RangemasterAudioEngine({
@@ -566,7 +570,7 @@ export const App: React.FC = () => {
             )}
             {researchTab === 'spectrum' && (
               <SpectrumAnalyzer
-                analysers={engineRef.current?.getAnalysers() ?? { input: null, preMonitor: null, postMonitor: null }}
+                analysers={analysers}
                 sampleRate={telemetry?.sampleRate ?? 48000}
                 sourceMode={sourceMode}
                 testSignalType={testSignalType}

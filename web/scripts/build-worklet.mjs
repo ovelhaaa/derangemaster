@@ -16,6 +16,9 @@ await esbuild.build({
   external: ['module', 'fs', 'path', 'url'],
   minify: false,
   sourcemap: false,
+  banner: {
+    js: `if (typeof globalThis.URL === "undefined") { globalThis.URL = class URL { constructor(u, b) { this.href = (b ? String(b) : "") + String(u); } }; }`,
+  },
   define: {
     'process.env.NODE_ENV': '"production"',
   },

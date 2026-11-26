@@ -107,10 +107,10 @@ export const SpectrumAnalyzer: React.FC<SpectrumAnalyzerProps> = ({
 
       // Compute H1..H10 + THD every ~8 frames ONLY when active source is known Sine
       ++frameCount;
-      if (isKnownSine && frameCount % 8 === 0 && analysers.preMonitor) {
+      if (isKnownSine && (frameCount === 1 || frameCount % 8 === 0) && analysers.preMonitor) {
         analysers.preMonitor.getFloatTimeDomainData(timeBuf);
         setHarmonicRes(analyzeSineHarmonicsFromTimeDomain(timeBuf, sampleRate, sineFreqHz));
-      } else if (!isKnownSine && harmonicRes !== null) {
+      } else if (!isKnownSine) {
         setHarmonicRes(null);
       }
 
@@ -119,7 +119,7 @@ export const SpectrumAnalyzer: React.FC<SpectrumAnalyzerProps> = ({
 
     rafId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(rafId);
-  }, [analysers, sampleRate, tapPostMonitor, isKnownSine, sineFreqHz, harmonicRes]);
+  }, [analysers, sampleRate, tapPostMonitor, isKnownSine, sineFreqHz]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

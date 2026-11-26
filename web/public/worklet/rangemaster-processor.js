@@ -1,3 +1,5 @@
+if (typeof globalThis.URL === "undefined") { globalThis.URL = class URL { constructor(u, b) { this.href = (b ? String(b) : "") + String(u); } }; }
+
 // src/wasm/rangemaster_dsp.js
 var Module = (() => {
   var _scriptName = import.meta.url;
@@ -681,7 +683,9 @@ function getTransistorMeta(id) {
 
 // src/wasm/rangemasterWasm.ts
 async function instantiateRangemasterWasm(wasmBinary) {
-  const opts = {};
+  const opts = {
+    locateFile: (p) => p
+  };
   if (wasmBinary) {
     opts.wasmBinary = new Uint8Array(wasmBinary);
   }

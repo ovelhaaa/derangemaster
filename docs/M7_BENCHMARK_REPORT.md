@@ -53,3 +53,17 @@ Este relatório atualiza os benchmarks Native em **M7B** após as otimizações 
 | **Categoria A** (`inputVolts` + `outputTrimDb`) | **`0.040 µs`** (`40 ns`) | Zero rebuild de matrizes, zero solve DC, rampa suave por amostra |
 | **Categoria B** (`boost` + `biasTrim` rebuild MNA + DC) | **`13.274 µs`** | LU equilibrada + refinamento iterativo + DC solve |
 | **Categoria C** (preparo candidata + aquecimento `256` + crossfade `256`) | **`997.99 µs`** (`~1.0 ms`) | Troca segura entre motores/transistores/oversampling sem descontinuidade |
+
+---
+
+## 4. Desempenho WASM Observado em AudioWorklet Real (Chromium)
+
+Medido no laboratório interativo `web/` servido via `vite preview` em Chromium (taxa `48 kHz`, quantum `128` amostras = orçamento de `2.667 µs`, `GP-AC`, `OC44 #2`, sem `-ffast-math`):
+
+| Configuração WASM | Callback Médio (`process()`) | Callback Máximo | Fração do Quantum | Overruns | Falhas Solver |
+|---|---:|---:|---:|---:|---:|
+| `GP-AC @ 4x` (`192 kHz` interno) | **`333–367 µs`** | `1000 µs` | **`12.5% – 13.8%`** | `0` | `0` |
+| `GP-AC @ 8x` (`384 kHz` interno) | **`700 µs`** | `1000 µs` | **`26.3%`** | `0` | `0` |
+
+*(Nota: o tempo reportado refere-se exclusivamente à duração do callback `process()` do AudioWorklet medida no navegador, não ao uso global de CPU do sistema. Com `4x` como padrão inicial no navegador, há mais de `85%` de margem de folga por quantum; `8x` opera confortavelmente em desktop moderno a `~26%` do quantum.)*
+

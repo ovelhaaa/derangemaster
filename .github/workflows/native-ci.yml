@@ -1,0 +1,33 @@
+name: Native CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  linux-release-and-sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure & Build Release
+        run: cmake -B build-rel -DCMAKE_BUILD_TYPE=Release && cmake --build build-rel -j4
+      - name: Test Release
+        run: ctest --test-dir build-rel --output-on-failure
+      - name: Configure & Build Debug (ASan + UBSan)
+        run: |
+          cmake -B build-dbg -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          cmake --build build-dbg -j4
+      - name: Test Debug (ASan + UBSan)
+        run: ctest --test-dir build-dbg --output-on-failure
+
+  windows-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure & Build Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release -j4
+      - name: Test Release
+        run: ctest --test-dir build -C Release --output-on-failure

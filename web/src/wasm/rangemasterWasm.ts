@@ -56,7 +56,9 @@ export interface RangemasterWasmModule {
 }
 
 export async function instantiateRangemasterWasm(wasmBinary?: ArrayBuffer): Promise<RangemasterWasmModule> {
-  const opts: Record<string, unknown> = {};
+  const opts: Record<string, unknown> = {
+    locateFile: (p: string) => p,
+  };
   if (wasmBinary) {
     opts.wasmBinary = new Uint8Array(wasmBinary);
   }

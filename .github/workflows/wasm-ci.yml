@@ -1,0 +1,39 @@
+name: WASM & Web Lab CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  wasm-and-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.62'
+      - name: Build Native Renderer for Equivalence Check
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DRANGEMASTER_BUILD_TESTS=OFF
+          cmake --build build --target rangemaster-render -j4
+          ln -sf rangemaster-render build/rangemaster-render.exe
+      - name: Build WASM Module
+        run: |
+          emcmake cmake -B build-wasm -DRANGEMASTER_BUILD_WASM=ON -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-wasm -j4
+      - name: Verify Native/WASM Numerical Equivalence
+        run: node tools/analysis/test_wasm_equivalence.mjs
+      - name: Sync WASM to Web App & Build
+        run: |
+          mkdir -p web/src/wasm web/public/wasm
+          cp build-wasm/rangemaster_dsp.js web/src/wasm/rangemaster_dsp.js
+          cp build-wasm/rangemaster_dsp.wasm web/src/wasm/rangemaster_dsp.wasm
+          cp build-wasm/rangemaster_dsp.wasm web/public/wasm/rangemaster_dsp.wasm
+          cd web && npm ci && npm run typecheck && npm run build
