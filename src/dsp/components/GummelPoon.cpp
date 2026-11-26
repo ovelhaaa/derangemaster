@@ -26,25 +26,25 @@ BjtEvaluation evaluateGummelPoon(double veb, double vcb, const GummelPoonParams&
     const double invVe = 1.0 / (p.Ne * p.Vt);
     const double invVc = 1.0 / (p.Nc * p.Vt);
 
-    double ef = 0.0, def = 0.0;
-    double er = 0.0, der = 0.0;
-    double ee = 0.0, dee = 0.0;
-    double ec = 0.0, dec = 0.0;
-    expSafe(veb * invVf, ef, def);
-    expSafe(vcb * invVr, er, der);
-    expSafe(veb * invVe, ee, dee);
-    expSafe(vcb * invVc, ec, dec);
+    double efm1 = 0.0, def = 0.0;
+    double erm1 = 0.0, der = 0.0;
+    double eem1 = 0.0, dee = 0.0;
+    double ecm1 = 0.0, dec = 0.0;
+    expm1Safe(veb * invVf, efm1, def);
+    expm1Safe(vcb * invVr, erm1, der);
+    expm1Safe(veb * invVe, eem1, dee);
+    expm1Safe(vcb * invVc, ecm1, dec);
 
-    const double If = p.Is * (ef - 1.0);
-    const double Ir = p.Is * (er - 1.0);
+    const double If = p.Is * efm1;
+    const double Ir = p.Is * erm1;
     const double dIf_dVeb = p.Is * invVf * def;
     const double dIr_dVcb = p.Is * invVr * der;
 
     const double invBf = 1.0 / p.betaF;
     const double invBr = 1.0 / p.betaR;
 
-    const double Ibe = invBf * If + p.Ise * (ee - 1.0);
-    const double Ibc = invBr * Ir + p.Isc * (ec - 1.0);
+    const double Ibe = invBf * If + p.Ise * eem1;
+    const double Ibc = invBr * Ir + p.Isc * ecm1;
     const double dIbe_dVeb = invBf * dIf_dVeb + p.Ise * invVe * dee;
     const double dIbc_dVcb = invBr * dIr_dVcb + p.Isc * invVc * dec;
 

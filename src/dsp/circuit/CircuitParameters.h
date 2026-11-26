@@ -4,8 +4,60 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace rangemaster {
+
+struct GummelPoonAblationFlags {
+    bool enableJunctionCaps{true};
+    bool enableEarlyEffect{true};
+    bool enableLeakageCurrents{true};
+    bool enableHighCurrentRolloff{true};
+    bool enableTerminalResistances{true};
+
+    bool operator==(const GummelPoonAblationFlags&) const noexcept = default;
+
+    [[nodiscard]] std::uint32_t toMask() const noexcept {
+        return (enableJunctionCaps ? 1u : 0u) |
+               (enableEarlyEffect ? 2u : 0u) |
+               (enableLeakageCurrents ? 4u : 0u) |
+               (enableHighCurrentRolloff ? 8u : 0u) |
+               (enableTerminalResistances ? 16u : 0u);
+    }
+
+    static GummelPoonAblationFlags fromMask(std::uint32_t mask) noexcept {
+        GummelPoonAblationFlags f{};
+        f.enableJunctionCaps = (mask & 1u) != 0u;
+        f.enableEarlyEffect = (mask & 2u) != 0u;
+        f.enableLeakageCurrents = (mask & 4u) != 0u;
+        f.enableHighCurrentRolloff = (mask & 8u) != 0u;
+        f.enableTerminalResistances = (mask & 16u) != 0u;
+        return f;
+    }
+};
+
+inline GummelPoonParams applyGpAblation(const GummelPoonParams& src,
+                                        const GummelPoonAblationFlags& flags) noexcept {
+    GummelPoonParams out = src;
+    if (!flags.enableEarlyEffect) {
+        out.Vaf = 1e30;
+        out.Var = 1e30;
+    }
+    if (!flags.enableHighCurrentRolloff) {
+        out.Ikf = 1e30;
+        out.Ikr = 1e30;
+    }
+    if (!flags.enableLeakageCurrents) {
+        out.Ise = 0.0;
+        out.Isc = 0.0;
+    }
+    if (!flags.enableTerminalResistances) {
+        out.Rb = 0.0;
+        out.Re = 0.0;
+        out.Rc = 0.0;
+    }
+    return out;
+}
 
 enum class EngineType : int {
     EbersMollDC = 0,            // Engine A
@@ -62,6 +114,9 @@ struct CircuitParameters {
 
     EngineType engine{EngineType::EbersMollDC};
     TransistorId transistor{TransistorId::OC44_02};
+    GummelPoonAblationFlags gpAblation{};
+
+    bool operator==(const CircuitParameters&) const noexcept = default;
 
     [[nodiscard]] double effectiveR2() const noexcept {
         return std::clamp(R2 * std::clamp(biasTrim, 0.25, 4.0), 1.0e3, 1.0e7);

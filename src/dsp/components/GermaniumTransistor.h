@@ -22,7 +22,10 @@ struct BjtEvaluation {
     bool valid{true};
 };
 
-// C^1-continuous overflow-safe exponential with linear continuation above kExpMax.
+// Overflow-safe exponential:
+//   - Upper bound (x > kExpMax = 40.0): exact C^1 linear continuation.
+//   - Lower bound (x < kExpMin = -80.0): C^0 underflow clamp (exp(-80) ~= 1.8e-35 < eps_mach;
+//     derivative set to 0.0, which is not strictly C^1 at -80 but differs by ~1.8e-35).
 inline void expSafe(double x, double& val, double& deriv) noexcept {
     constexpr double kExpMin = -80.0;
     constexpr double kExpMax = 40.0;
@@ -35,6 +38,25 @@ inline void expSafe(double x, double& val, double& deriv) noexcept {
     } else {
         const double eMax = std::exp(kExpMax);
         val = eMax * (1.0 + (x - kExpMax));
+        deriv = eMax;
+    }
+}
+
+// Precision-preserving exp(x) - 1 using std::expm1 near x = 0 to avoid catastrophic
+// cancellation for small-signal junction voltages, with C^1 upper linear extension
+// above kExpMax = 40.0 and C^0 clamp below kExpMin = -80.0.
+inline void expm1Safe(double x, double& exm1, double& deriv) noexcept {
+    constexpr double kExpMin = -80.0;
+    constexpr double kExpMax = 40.0;
+    if (x < kExpMin) {
+        exm1 = -1.0;
+        deriv = 0.0;
+    } else if (x <= kExpMax) {
+        exm1 = std::expm1(x);
+        deriv = exm1 + 1.0;
+    } else {
+        const double eMax = std::exp(kExpMax);
+        exm1 = (eMax - 1.0) + eMax * (x - kExpMax);
         deriv = eMax;
     }
 }

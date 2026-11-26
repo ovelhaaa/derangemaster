@@ -25,6 +25,8 @@ struct ParameterState {
     double outputRefVolts{9.0};
     double outputTrimDb{0.0};
 
+    bool operator==(const ParameterState&) const noexcept = default;
+
     [[nodiscard]] double outputGainLinear() const noexcept {
         const double ref = (outputRefVolts > 1e-12) ? outputRefVolts : 1.0;
         return std::pow(10.0, outputTrimDb / 20.0) / ref;

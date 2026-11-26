@@ -18,6 +18,12 @@ struct NodalDkMatrices {
     bool usesInternalNodes{false};
     bool valid{false};
 
+    // Linear solver conditioning & accuracy diagnostics
+    double condEstimateDyn{0.0};
+    double condEstimateDc{0.0};
+    double maxLinearResidualDyn{0.0};
+    double maxLinearResidualDc{0.0};
+
     std::array<double, kMaxCaps> gC{};
     std::array<double, kMaxCaps> cVals{};
 

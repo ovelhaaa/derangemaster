@@ -14,15 +14,15 @@ BjtEvaluation evaluateEbersMoll(double veb, double vcb, const EbersMollParams& p
     const double invVf = 1.0 / (p.Nf * p.Vt);
     const double invVr = 1.0 / (p.Nr * p.Vt);
 
-    double ef = 0.0;
+    double efm1 = 0.0;
     double def = 0.0;
-    double er = 0.0;
+    double erm1 = 0.0;
     double der = 0.0;
-    expSafe(veb * invVf, ef, def);
-    expSafe(vcb * invVr, er, der);
+    expm1Safe(veb * invVf, efm1, def);
+    expm1Safe(vcb * invVr, erm1, der);
 
-    const double If = p.Is * (ef - 1.0);
-    const double Ir = p.Is * (er - 1.0);
+    const double If = p.Is * efm1;
+    const double Ir = p.Is * erm1;
     const double dIf_dVeb = p.Is * invVf * def;
     const double dIr_dVcb = p.Is * invVr * der;
 
