@@ -43,4 +43,8 @@ if(RANGEMASTER_BUILD_TESTS AND NOT RANGEMASTER_BUILD_WASM)
     add_executable(test_dc_and_basic tests/circuit/test_dc_and_basic.cpp)
     target_link_libraries(test_dc_and_basic PRIVATE rangemaster_core)
     add_test(NAME circuit.dc_and_basic COMMAND test_dc_and_basic)
+
+    add_executable(test_ac_ebers_moll tests/circuit/test_ac_ebers_moll.cpp)
+    target_link_libraries(test_ac_ebers_moll PRIVATE rangemaster_core)
+    add_test(NAME circuit.ac_ebers_moll COMMAND test_ac_ebers_moll)
 endif()
