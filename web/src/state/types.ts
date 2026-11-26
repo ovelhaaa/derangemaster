@@ -82,6 +82,8 @@ export interface ConditioningInfo {
 export interface WorkletTelemetry {
   transitionState?: string;
   internalLatencySamples?: number;
+  clock?: string;
+  observedClockStepUs?: number | null;
   sampleRate: number;
   internalSampleRate: number;
   latencySamples: number;

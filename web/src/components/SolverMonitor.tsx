@@ -87,7 +87,7 @@ export const SolverMonitor: React.FC<SolverMonitorProps> = ({
           <div className="kv-label">Worklet Callback (Mean / Max)</div>
           <div className="kv-val mono">
             {telemetry
-              ? `${telemetry.processTimeMeanUs.toFixed(0)} / ${telemetry.processTimeMaxUs.toFixed(0)} us (budget ${telemetry.quantumBudgetUs.toFixed(0)} us)`
+              ? `~${(telemetry.processTimeMeanUs / 1000).toFixed(1)} / ${(telemetry.processTimeMaxUs / 1000).toFixed(1)} ms; clock ${telemetry.clock ?? 'unknown'} step ${(telemetry.observedClockStepUs ?? 1000) / 1000} ms`
               : '--'}
           </div>
         </div>
