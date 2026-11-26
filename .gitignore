@@ -10,6 +10,7 @@ __pycache__/
 .pytest_cache/
 
 # Generated artifacts (large WAVs & plots — scripts reproduce them)
+artifacts/**/*.wav
 artifacts/listening_pack/*.wav
 artifacts/plots/*.png
 

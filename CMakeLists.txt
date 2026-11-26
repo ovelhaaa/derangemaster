@@ -58,6 +58,11 @@ if(RANGEMASTER_BUILD_TOOLS AND NOT RANGEMASTER_BUILD_WASM)
         tools/renderer/main.cpp
     )
     target_link_libraries(rangemaster-render PRIVATE rangemaster_core)
+
+    add_executable(rangemaster-bench
+        tools/benchmarks/main.cpp
+    )
+    target_link_libraries(rangemaster-bench PRIVATE rangemaster_core)
 endif()
 
 if(RANGEMASTER_BUILD_TESTS AND NOT RANGEMASTER_BUILD_WASM)
