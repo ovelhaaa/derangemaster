@@ -1,0 +1,19 @@
+# Build directories
+build/
+build-wasm/
+cmake-build-*/
+.vs/
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Generated artifacts (large WAVs & plots — scripts reproduce them)
+artifacts/listening_pack/*.wav
+artifacts/plots/*.png
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+*.user
