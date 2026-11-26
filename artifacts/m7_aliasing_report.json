@@ -1,0 +1,268 @@
+{
+  "ref32x_20khz_noise_floor_v": 0.0003408528815994421,
+  "halfband_stages": [
+    {
+      "stage": 0,
+      "taps": 63,
+      "passband_ripple_0_0p20_db": 0.0005090557020609966,
+      "stopband_atten_above_0p2917_db": -53.03332997278282,
+      "atten_at_24p5k_0p255_db": -8.494798772624586
+    },
+    {
+      "stage": 1,
+      "taps": 31,
+      "passband_ripple_0_0p20_db": 0.5822976784462337,
+      "stopband_atten_above_0p2917_db": -19.54494042008654,
+      "atten_at_24p5k_0p255_db": -7.1442320076783155
+    },
+    {
+      "stage": 2,
+      "taps": 19,
+      "passband_ripple_0_0p20_db": 1.791429946078495,
+      "stopband_atten_above_0p2917_db": -12.790106395064287,
+      "atten_at_24p5k_0p255_db": -6.678725351265452
+    },
+    {
+      "stage": 3,
+      "taps": 15,
+      "passband_ripple_0_0p20_db": 2.440493751817781,
+      "stopband_atten_above_0p2917_db": -10.97232066394307,
+      "atten_at_24p5k_0p255_db": -6.528377729043485
+    }
+  ],
+  "coherent_cases": {
+    "1k_0p5v": {
+      "freq_hz": 999.755859375,
+      "amp_v": 0.5,
+      "rows": [
+        {
+          "os": 1,
+          "snr_total_24k_db": 43.884304461833075,
+          "snr_audible_20k_db": 46.48590101322584,
+          "sfdr_audible_20k_db": 55.4604346537693,
+          "sfdr_transition_20_24k_db": 51.34458947637366,
+          "peak_spur_20k_hz": 17007.568359375,
+          "peak_spur_trans_hz": 22006.34765625,
+          "pct_alias_power_above_20k": 45.06611109786166
+        },
+        {
+          "os": 2,
+          "snr_total_24k_db": 60.390068887504995,
+          "snr_audible_20k_db": 62.87696842997058,
+          "sfdr_audible_20k_db": 75.44398141896146,
+          "sfdr_transition_20_24k_db": 66.3730425628785,
+          "peak_spur_20k_hz": 19018.798828125,
+          "peak_spur_trans_hz": 23006.103515625,
+          "pct_alias_power_above_20k": 43.595981579149395
+        },
+        {
+          "os": 4,
+          "snr_total_24k_db": 65.69442137391702,
+          "snr_audible_20k_db": 78.50582136171867,
+          "sfdr_audible_20k_db": 92.4560738848772,
+          "sfdr_transition_20_24k_db": 66.4421998018552,
+          "peak_spur_20k_hz": 19042.236328125,
+          "peak_spur_trans_hz": 23006.103515625,
+          "pct_alias_power_above_20k": 94.76568323579818
+        },
+        {
+          "os": 8,
+          "snr_total_24k_db": 65.94078978917517,
+          "snr_audible_20k_db": 93.27932214238942,
+          "sfdr_audible_20k_db": 111.91027403794524,
+          "sfdr_transition_20_24k_db": 66.41670648622281,
+          "peak_spur_20k_hz": 2997.802734375,
+          "peak_spur_trans_hz": 23006.103515625,
+          "pct_alias_power_above_20k": 99.8154360974338
+        },
+        {
+          "os": 16,
+          "snr_total_24k_db": 65.93368133223903,
+          "snr_audible_20k_db": 94.94736307670686,
+          "sfdr_audible_20k_db": 111.9122681453234,
+          "sfdr_transition_20_24k_db": 66.40646553225008,
+          "peak_spur_20k_hz": 3000.732421875,
+          "peak_spur_trans_hz": 23006.103515625,
+          "pct_alias_power_above_20k": 99.87450343882483
+        }
+      ]
+    },
+    "3p5k_0p8v": {
+      "freq_hz": 3500.244140625,
+      "amp_v": 0.8,
+      "rows": [
+        {
+          "os": 1,
+          "snr_total_24k_db": 14.991518130236827,
+          "snr_audible_20k_db": 15.544206707943506,
+          "sfdr_audible_20k_db": 20.28134275625426,
+          "sfdr_transition_20_24k_db": 24.75801998247707,
+          "peak_spur_20k_hz": 16497.802734375,
+          "peak_spur_trans_hz": 23498.291015625,
+          "pct_alias_power_above_20k": 11.94963872691018
+        },
+        {
+          "os": 2,
+          "snr_total_24k_db": 25.48012977570474,
+          "snr_audible_20k_db": 27.725213815119133,
+          "sfdr_audible_20k_db": 33.96352582515219,
+          "sfdr_transition_20_24k_db": 31.30233826978774,
+          "peak_spur_20k_hz": 11994.140625,
+          "peak_spur_trans_hz": 23498.291015625,
+          "pct_alias_power_above_20k": 40.36632198654937
+        },
+        {
+          "os": 4,
+          "snr_total_24k_db": 31.29049617034091,
+          "snr_audible_20k_db": 41.229839253253225,
+          "sfdr_audible_20k_db": 47.96479953091616,
+          "sfdr_transition_20_24k_db": 31.899235073412385,
+          "peak_spur_20k_hz": 6487.060546875,
+          "peak_spur_trans_hz": 23498.291015625,
+          "pct_alias_power_above_20k": 89.85935237667712
+        },
+        {
+          "os": 8,
+          "snr_total_24k_db": 32.04993915376554,
+          "snr_audible_20k_db": 56.79490826988841,
+          "sfdr_audible_20k_db": 64.95127894860305,
+          "sfdr_transition_20_24k_db": 32.066080764573584,
+          "peak_spur_20k_hz": 19974.609375,
+          "peak_spur_trans_hz": 23498.291015625,
+          "pct_alias_power_above_20k": 99.66464631076548
+        },
+        {
+          "os": 16,
+          "snr_total_24k_db": 32.08593884673483,
+          "snr_audible_20k_db": 69.34050500306469,
+          "sfdr_audible_20k_db": 77.97701760389613,
+          "sfdr_transition_20_24k_db": 32.08682771232175,
+          "peak_spur_20k_hz": 19998.046875,
+          "peak_spur_trans_hz": 23498.291015625,
+          "pct_alias_power_above_20k": 99.98118330331525
+        }
+      ]
+    },
+    "3p5k_0p2v": {
+      "freq_hz": 3500.244140625,
+      "amp_v": 0.2,
+      "rows": [
+        {
+          "os": 1,
+          "snr_total_24k_db": 27.473402589656946,
+          "snr_audible_20k_db": 28.026388375032205,
+          "sfdr_audible_20k_db": 33.69472782544345,
+          "sfdr_transition_20_24k_db": 36.71859938053173,
+          "peak_spur_20k_hz": 19998.046875,
+          "peak_spur_trans_hz": 23498.291015625,
+          "pct_alias_power_above_20k": 11.955664211520634
+        },
+        {
+          "os": 2,
+          "snr_total_24k_db": 38.58444622399495,
+          "snr_audible_20k_db": 45.03898940233893,
+          "sfdr_audible_20k_db": 52.42474952163999,
+          "sfdr_transition_20_24k_db": 39.71699340259635,
+          "peak_spur_20k_hz": 8493.896484375,
+          "peak_spur_trans_hz": 23498.291015625,
+          "pct_alias_power_above_20k": 77.37723510501768
+        },
+        {
+          "os": 4,
+          "snr_total_24k_db": 39.29850703928273,
+          "snr_audible_20k_db": 61.63109005043793,
+          "sfdr_audible_20k_db": 68.34180263286882,
+          "sfdr_transition_20_24k_db": 39.32510574699466,
+          "peak_spur_20k_hz": 6487.060546875,
+          "peak_spur_trans_hz": 23498.291015625,
+          "pct_alias_power_above_20k": 99.41555762236904
+        },
+        {
+          "os": 8,
+          "snr_total_24k_db": 39.284334918548055,
+          "snr_audible_20k_db": 79.55543318814199,
+          "sfdr_audible_20k_db": 87.6684827961927,
+          "sfdr_transition_20_24k_db": 39.284778267405166,
+          "peak_spur_20k_hz": 19998.046875,
+          "peak_spur_trans_hz": 23498.291015625,
+          "pct_alias_power_above_20k": 99.99060514302184
+        },
+        {
+          "os": 16,
+          "snr_total_24k_db": 39.276244401393676,
+          "snr_audible_20k_db": 87.43525583799521,
+          "sfdr_audible_20k_db": 87.66592298244848,
+          "sfdr_transition_20_24k_db": 39.27631111529559,
+          "peak_spur_20k_hz": 19998.046875,
+          "peak_spur_trans_hz": 23498.291015625,
+          "pct_alias_power_above_20k": 99.99847208618976
+        }
+      ]
+    },
+    "5k_0p8v": {
+      "freq_hz": 5000.244140625,
+      "amp_v": 0.8,
+      "rows": [
+        {
+          "os": 1,
+          "snr_total_24k_db": 9.05044922036422,
+          "snr_audible_20k_db": 9.494311109914179,
+          "sfdr_audible_20k_db": 14.209356084037445,
+          "sfdr_transition_20_24k_db": 19.96328320543447,
+          "peak_spur_20k_hz": 17998.53515625,
+          "peak_spur_trans_hz": 22998.779296875,
+          "pct_alias_power_above_20k": 9.71537239798302
+        },
+        {
+          "os": 2,
+          "snr_total_24k_db": 20.550072862473634,
+          "snr_audible_20k_db": 22.109304204361813,
+          "sfdr_audible_20k_db": 26.42349300738562,
+          "sfdr_transition_20_24k_db": 28.23910831617662,
+          "peak_spur_20k_hz": 15996.09375,
+          "peak_spur_trans_hz": 22998.779296875,
+          "pct_alias_power_above_20k": 30.164400478318438
+        },
+        {
+          "os": 4,
+          "snr_total_24k_db": 26.191189021493358,
+          "snr_audible_20k_db": 33.94102927104283,
+          "sfdr_audible_20k_db": 40.286124514683465,
+          "sfdr_transition_20_24k_db": 27.020932523300218,
+          "peak_spur_20k_hz": 11991.2109375,
+          "peak_spur_trans_hz": 22998.779296875,
+          "pct_alias_power_above_20k": 83.2113422778154
+        },
+        {
+          "os": 8,
+          "snr_total_24k_db": 26.61675689291142,
+          "snr_audible_20k_db": 50.4617074858178,
+          "sfdr_audible_20k_db": 56.519413560426244,
+          "sfdr_transition_20_24k_db": 26.635785106446498,
+          "peak_spur_20k_hz": 8981.689453125,
+          "peak_spur_trans_hz": 22998.779296875,
+          "pct_alias_power_above_20k": 99.58742306926823
+        },
+        {
+          "os": 16,
+          "snr_total_24k_db": 26.58840056693006,
+          "snr_audible_20k_db": 65.17591911830752,
+          "sfdr_audible_20k_db": 73.14005335908578,
+          "sfdr_transition_20_24k_db": 26.5891453126306,
+          "peak_spur_20k_hz": 2037.59765625,
+          "peak_spur_trans_hz": 22998.779296875,
+          "pct_alias_power_above_20k": 99.98615642860369
+        }
+      ]
+    }
+  },
+  "engine_e_c2_audit": {
+    "c2_farads": 6.252e-26,
+    "tau_c2_r3_sec": 3.97065e-23,
+    "xc2_20khz_ohms": 1.27283e+20,
+    "cond_dyn": 161951,
+    "cond_dc": 21881000.0,
+    "res_dyn": 8.68585e-18,
+    "res_dc": 1.74673e-19
+  }
+}

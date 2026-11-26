@@ -1,0 +1,10 @@
+{
+  "max_dc_voltage_diff_v": 1.000000082740371e-11,
+  "max_dc_current_diff_a": 1.000013873792005e-15,
+  "max_freq_response_db_diff": 5.595974528205261e-08,
+  "max_dafx17_fig10_v_diff": 0.0,
+  "max_amp_sweep_gain_db_diff": 3.8062271556782434e-08,
+  "max_amp_sweep_thd_pct_diff": 1.1568941005180022e-07,
+  "max_range_c1_100hz_db_diff": 0.0,
+  "max_radau_ode_rmse_diff_v": 3.93005360590018e-09
+}
