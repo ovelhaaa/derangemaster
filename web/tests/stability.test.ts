@@ -108,6 +108,15 @@ describe('quantum state machine', () => {
   });
 });
 describe('offline listening and export', () => {
+  test('Raw export cannot silently include requested RMS gain or monitoring', async () => {
+    const input=Float32Array.from({length:1024},(_,i)=>.2*Math.sin(i*.057));
+    const options={mode:'raw',target:'A',levelMatched:true,matchGain:4,includeMonitoring:true,monitorMode:'direct',cabinetIrBuffer:null,monitorVolume:.2,inputLabel:'test',slotConfig:cfg()} as const;
+    const raw=await exportWavAndManifest(M,input,48000,options);
+    const reference=await exportWavAndManifest(M,input,48000,{...options,levelMatched:false,includeMonitoring:false});
+    expect(new Uint8Array(await raw.wavBlob.arrayBuffer())).toEqual(new Uint8Array(await reference.wavBlob.arrayBuffer()));
+    const manifest=JSON.parse(raw.manifestJson);
+    expect(manifest.level_matching.enabled).toBe(false); expect(manifest.monitoring_chain.included).toBe(false);
+  });
   test('identical RMS match, silence handling and no excerpt truncation', () => {
     const input=Float32Array.from({length:48000},(_,i)=>.2*Math.sin(i*.057));
     const gains=computeFileLevelMatchGains(M,input,48000,cfg(),cfg());

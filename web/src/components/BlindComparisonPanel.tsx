@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { BlindSessionEntry, DspSlotConfig, SlotId } from '../state/types';
 
 interface BlindComparisonPanelProps {
+  busy: boolean;
   levelMethod: string;
   open: boolean;
   slotA: DspSlotConfig;
@@ -13,6 +14,7 @@ interface BlindComparisonPanelProps {
 }
 
 export const BlindComparisonPanel: React.FC<BlindComparisonPanelProps> = ({
+  busy,
   levelMethod,
   open,
   slotA,
@@ -126,10 +128,11 @@ export const BlindComparisonPanel: React.FC<BlindComparisonPanelProps> = ({
 
       {!revealed ? (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {busy && <span role="status">Preparing candidate…</span>}
           <span style={{ color: '#92948E', fontSize: '12px' }}>Lock decision &amp; reveal:</span>
-          <button className="btn btn-accent btn-sm" onClick={() => recordDecision('X')}>Prefer X</button>
-          <button className="btn btn-accent btn-sm" onClick={() => recordDecision('Y')}>Prefer Y</button>
-          <button className="btn btn-sm" onClick={() => recordDecision('tie')}>No Preference / Tie</button>
+          <button className="btn btn-accent btn-sm" disabled={busy || dryActive} onClick={() => recordDecision('X')}>Prefer X</button>
+          <button className="btn btn-accent btn-sm" disabled={busy || dryActive} onClick={() => recordDecision('Y')}>Prefer Y</button>
+          <button className="btn btn-sm" disabled={busy || dryActive} onClick={() => recordDecision('tie')}>No Preference / Tie</button>
         </div>
       ) : (
         <div className="notice-bar mono" style={{ color: '#E9E7DF' }}>

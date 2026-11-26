@@ -54,6 +54,7 @@ export const App: React.FC = () => {
 
   // Level match
   const [levelMatched, setLevelMatched] = useState(false);
+  const [calibrationValid, setCalibrationValid] = useState(false);
   const [matchGainA, setMatchGainA] = useState(1.0);
   const [matchGainB, setMatchGainB] = useState(1.0);
 
@@ -229,6 +230,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     ++calibrationGeneration.current;
+    setCalibrationValid(false);
     setLevelMatched(false); setMatchGainA(1); setMatchGainB(1);
     engineRef.current?.setLevelMatchGain(1);
   }, [slotA, slotB, sourceMode, fileName, testSignalType, sineFreqHz, sineAmpVolts, reference, loopStartSec, loopEndSec]);
@@ -244,12 +246,14 @@ export const App: React.FC = () => {
       const res = await runOffline<{ gainA: number; gainB: number }>('match', { samples, sampleRate: ctx.sampleRate, slotA, slotB }, setOfflineProgress, offlineAbort.current.signal);
       if (generation !== calibrationGeneration.current) throw new Error('Calibration outdated: configuration/source changed');
       setMatchGainA(res.gainA); setMatchGainB(res.gainB); setLevelMatched(true);
+      setCalibrationValid(true);
       eng.setLevelMatchGain(activeSlot === 'A' ? res.gainA : res.gainB);
     } catch (err) { setErrorBanner(String(err)); } finally { setOfflineProgress(null); }
   };
 
   const handleToggleLevelMatch = () => {
     const next = !levelMatched;
+    if (next && !calibrationValid) { setErrorBanner('RMS calibration is missing or outdated. Run Match RMS A/B first.'); return; }
     setLevelMatched(next);
     const g = next ? (activeSlot === 'A' ? matchGainA : matchGainB) : 1.0;
     engineRef.current?.setLevelMatchGain(g);
@@ -580,6 +584,7 @@ export const App: React.FC = () => {
         syncToWorklet(a, 'A', false, 1, 1);
       }} />}
       <BlindComparisonPanel
+        busy={Boolean(telemetry?.switching) || confirmed.slot !== activeSlot || JSON.stringify(confirmed.config) !== JSON.stringify(activeConfig)}
         open={blindOpen}
         slotA={slotA}
         slotB={slotB}

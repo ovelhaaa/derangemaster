@@ -12,6 +12,13 @@ test('browser audio, worker and listening smoke', async ({ page }) => {
   await page.getByRole('button', { name: 'Match RMS A/B', exact: true }).click();
   await expect(page.getByRole('button', { name: /^Matched/ })).toBeVisible({ timeout: 60000 });
   await page.screenshot({ path: '../artifacts/m71/listening.png', fullPage: true });
+  await page.getByRole('button', { name: 'Blind Test', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Suspend Audio/ })).not.toBeVisible();
+  await expect(page.getByLabel('Listening session')).not.toBeVisible();
+  const tie = page.getByRole('button', { name: 'No Preference / Tie', exact: true });
+  await expect(tie).toBeEnabled({ timeout: 15000 });
+  await tie.click();
+  await expect(page.getByText(/Revealed:/)).toBeVisible();
   expect(errors).toEqual([]);
 });
 
