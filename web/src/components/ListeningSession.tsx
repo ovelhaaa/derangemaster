@@ -19,18 +19,18 @@ export const LISTENING_SESSIONS: Array<{ title: string; note: string; candidates
     candidates: ([2, 4, 8, 16] as OversamplingFactor[]).map(oversampling => ({ name: `${oversampling}×`, config: { ...base(), oversampling } })) },
 ];
 
-export const ListeningSession: React.FC<{ onCompare: (a: DspSlotConfig, b: DspSlotConfig) => void }> = ({ onCompare }) => {
+export const ListeningSession: React.FC<{ context: Record<string, unknown>; onCompare: (a: DspSlotConfig, b: DspSlotConfig) => void }> = ({ onCompare, context }) => {
   const [open, setOpen] = useState(false), [session, setSession] = useState(0), [candidate, setCandidate] = useState(1);
   const [notes, setNotes] = useState(''), [preference, setPreference] = useState('tie');
   const [log, setLog] = useState<unknown[]>(() => { try { return JSON.parse(localStorage.getItem('derangemaster-listening-v1') || '[]'); } catch { return []; } });
   const current = LISTENING_SESSIONS[session];
   const save = () => {
-    const next = [...log, { session: current.title, candidates: [current.candidates[0], current.candidates[candidate]], preference, notes, timestamp: new Date().toISOString(), method: 'See RMS/raw setting and companion manifest; input and monitoring must be held constant' }];
+    const next = [...log, { session: current.title, candidates: [current.candidates[0], current.candidates[candidate]], preference, notes, timestamp: new Date().toISOString(), context: structuredClone(context) }];
     setLog(next); localStorage.setItem('derangemaster-listening-v1', JSON.stringify(next));
   };
   return <section className="panel">
     <button className="btn" onClick={() => setOpen(!open)}>Listening Session {open ? '−' : '+'}</button>
-    {open && <div>
+    {open && <div className="listening-controls">
       <p>Use one repeated guitar excerpt, unchanged monitoring and input voltage. Calibrate RMS Match after loading each pair. Save short notes; no winner is required.</p>
       <select aria-label="Listening session" value={session} onChange={e => { setSession(Number(e.target.value)); setCandidate(1); }}>{LISTENING_SESSIONS.map((s, i) => <option key={s.title} value={i}>{s.title}</option>)}</select>
       <p>{current.note}</p>

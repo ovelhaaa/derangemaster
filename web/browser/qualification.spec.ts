@@ -11,6 +11,7 @@ test('browser audio, worker and listening smoke', async ({ page }) => {
   await page.getByRole('button', { name: 'Synthetic reference', exact: true }).click();
   await page.getByRole('button', { name: 'Match RMS A/B', exact: true }).click();
   await expect(page.getByRole('button', { name: /^Matched/ })).toBeVisible({ timeout: 60000 });
+  await page.screenshot({ path: '../artifacts/m71/listening.png', fullPage: true });
   expect(errors).toEqual([]);
 });
 
@@ -33,6 +34,23 @@ test('offline Worker cancellation and fetch failure', async ({ page }) => {
     try { await runOffline('match', {}); return 'unexpected success'; } catch (e) { return (e as Error).message; }
   });
   expect(failure).toContain('503');
+});
+
+test('offline Worker WAV export and manifest', async ({ page }) => {
+  test.setTimeout(60000);
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    // @ts-ignore Vite qualification module
+    const { runOffline } = await import('/src/audio/OfflineWorkerClient.ts');
+    // @ts-ignore
+    const { NOMINAL_DEFAULT_CONFIG } = await import('/src/state/presets.ts');
+    const samples = Float32Array.from({length:4800}, (_,i)=>.2*Math.sin(i*.057));
+    const result = await runOffline('export', { samples, sampleRate: 48000, options: { target:'A', mode:'latency-compensated', levelMatched:false, matchGain:1, includeMonitoring:false, monitorMode:'direct', cabinetIrBuffer:null, monitorVolume:1, inputLabel:'qualification sine', slotConfig:NOMINAL_DEFAULT_CONFIG } });
+    return { size:result.wavBlob.size, manifest:JSON.parse(result.manifestJson) };
+  });
+  expect(result.size).toBe(44 + 4800 * 4);
+  expect(result.manifest.export_mode).toBe('latency-compensated');
+  expect(result.manifest.config_abi_version).toBe(1);
 });
 
 test('ten minute real AudioWorklet qualification', async ({ page }, info) => {

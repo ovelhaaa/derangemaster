@@ -559,7 +559,7 @@ export const App: React.FC = () => {
         {offlineProgress !== null && <p role="status">Offline {Math.round(offlineProgress * 100)}% <button className="btn" onClick={() => offlineAbort.current?.abort()}>Cancel processing</button></p>}
         {audioReady && <p className="mono">Requested slot {activeSlot}; confirmed DSP slot {confirmed.slot} · {confirmed.config.engine}</p>}
       </section>}
-      {!blindLocked && <ListeningSession onCompare={(a, b) => {
+      {!blindLocked && <ListeningSession context={{ levelMethod: levelMatched ? 'RMS Match' : 'Raw Level', matchGainA, matchGainB, monitorMode, monitorVolume, source: fileName, reference: captureStatus, referenceSamples: reference?.length ?? 0, sampleRate: engineRef.current?.getContext()?.sampleRate, loopStartSec, loopEndSec }} onCompare={(a, b) => {
         setSlotA(cloneConfig(a)); setSlotB(cloneConfig(b)); setActiveSlot('A');
         syncToWorklet(a, 'A', false, 1, 1);
       }} />}
