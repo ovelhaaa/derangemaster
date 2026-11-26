@@ -90,6 +90,14 @@ describe('quantum state machine', () => {
     const out=block(p,0,'impulse'); expect(out[73]).toBe(.5);
     expect(out.filter((v:number)=>v!==0).length).toBe(1);
   });
+  test('largest supported quantum catches up without reusing current input', async () => {
+    const p = await processor(), input = new Float32Array(1024).fill(.1), out = new Float32Array(1024);
+    for (let b=0;b<32;b++) p.process([[input]],[[out]]);
+    p.handleMessage({type:'set-config',requestId:1,slot:'B',config:{...cfg(),oversampling:1},levelMatchGain:1});
+    for (let b=0;b<40;b++) p.process([[input]],[[out]]);
+    expect(p.activeSlot).toBe('B'); expect(p.state).toBe('IDLE');
+    expect(Array.from(p.inView.slice(0,1024))).toEqual(Array.from(input));
+  });
   test('WASM initialization failure is reported', async () => {
     const p=new Processor(); await p.initWasm(new ArrayBuffer(20),cfg(),'A');
     expect(p.ready).toBe(false); expect(p.port.messages.at(-1).type).toBe('wasm-error');

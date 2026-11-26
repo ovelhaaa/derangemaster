@@ -239,13 +239,13 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
       const condPtr = M._malloc(32);
 
       this.validationHandle = M._rangemaster_create();
-      this.warmPtr = M._malloc(MAX_QUANTUM * 8);
-      this.warmOutPtr = M._malloc(MAX_QUANTUM * 8);
+      this.warmPtr = M._malloc(MAX_QUANTUM * 2 * 8);
+      this.warmOutPtr = M._malloc(MAX_QUANTUM * 2 * 8);
       if (![hA, hB, inPtr, outActivePtr, outCandPtr, diagPtr, dcPtr, condPtr, this.validationHandle, this.warmPtr, this.warmOutPtr].every(Boolean)) {
         throw new Error('WASM allocation failed');
       }
-      this.warmView = new Float64Array(M.HEAPF64.buffer, this.warmPtr, MAX_QUANTUM);
-      this.warmOutView = new Float64Array(M.HEAPF64.buffer, this.warmOutPtr, MAX_QUANTUM);
+      this.warmView = new Float64Array(M.HEAPF64.buffer, this.warmPtr, MAX_QUANTUM * 2);
+      this.warmOutView = new Float64Array(M.HEAPF64.buffer, this.warmOutPtr, MAX_QUANTUM * 2);
       this.M = M;
       this.hActive = hA;
       this.hCand = hB;
@@ -328,9 +328,11 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
     }
     if (this.state === 'WARMUP' && this.warmView && this.warmOutView) {
       // At most two quanta of replay per callback, using independent WASM storage.
-      const count = Math.min(2 * n, MAX_QUANTUM, this.historyTotal - this.warmupCursor);
+      const count = Math.min(2 * n, this.historyTotal - this.warmupCursor);
       for (let i = 0; i < count; ++i) this.warmView[i] = this.warmupInputRing[(this.warmupCursor + i) & RING_MASK];
-      if (count) this.M._rangemaster_process_f64(this.hCand, this.warmPtr, this.warmOutPtr, count);
+      for (let off = 0; off < count; off += MAX_QUANTUM) {
+        this.M._rangemaster_process_f64(this.hCand, this.warmPtr + off * 8, this.warmOutPtr + off * 8, Math.min(MAX_QUANTUM, count - off));
+      }
       for (let i = 0; i < count; ++i) {
         this.candDelayRing[this.candDelayWrite] = this.warmOutView[i];
         this.candDelayWrite = (this.candDelayWrite + 1) & RING_MASK;
