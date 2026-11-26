@@ -15,6 +15,20 @@ inline double l2Norm2(double a, double b) noexcept {
     return std::sqrt(a * a + b * b);
 }
 
+// Nagel (1975) SPICE3 pnjlim: logarithmic damping on forward exponential steps
+// exceeding vCrit, preventing overshoot without stalling linear reverse-bias jumps.
+inline double pnjlim(double vNew, double vOld, double vtEff, double vCrit) noexcept {
+    if (vNew > vCrit && std::abs(vNew - vOld) > 2.0 * vtEff) {
+        if (vOld > 0.0) {
+            const double arg = 1.0 + (vNew - vOld) / vtEff;
+            vNew = (arg > 0.0) ? (vOld + vtEff * std::log(arg)) : vCrit;
+        } else {
+            vNew = vtEff * std::log(vNew / vtEff);
+        }
+    }
+    return vNew;
+}
+
 inline bool solve2x2(const double J[2][2], const double rhs[2], double sol[2]) noexcept {
     const double det = J[0][0] * J[1][1] - J[0][1] * J[1][0];
     const double scale = J[0][0] * J[0][0] + J[0][1] * J[0][1] + J[1][0] * J[1][0] + J[1][1] * J[1][1] + 1.0;
@@ -118,8 +132,8 @@ SolverResult NewtonSolver::solveSinglePass(const std::array<double, 2>& p,
     double gL2 = l2Norm2(g[0], g[1]);
     res.finalResidual = gInf;
 
-    const double tol0 = config_.absTol + config_.relTol * infNorm2(res.vn[0], res.vn[1]);
-    if (gInf <= tol0) {
+    // Require tight 1e-13 residual to skip iteration 0 (keeps DC silence exact)
+    if (gInf <= 1e-13) {
         res.converged = true;
         return res;
     }
@@ -141,16 +155,15 @@ SolverResult NewtonSolver::solveSinglePass(const std::array<double, 2>& p,
             return res;
         }
 
-        const double stepInf = infNorm2(step[0], step[1]);
         const double fullStepL2 = l2Norm2(step[0], step[1]);
-        if (stepInf > config_.maxStepVolts && stepInf > 0.0) {
-            const double scale = config_.maxStepVolts / stepInf;
-            step[0] *= scale;
-            step[1] *= scale;
-        }
-        const double cappedStepL2 = l2Norm2(step[0], step[1]);
 
-        // Domain-guarded affine-invariant (Deuflhard) + residual-norm backtracking line search
+        // Nagel (1975) SPICE3 pnjlim logarithmic junction damping on forward excursions
+        const double vLim0 = pnjlim(res.vn[0] + step[0], res.vn[0], config_.vtEffF, config_.vCritF);
+        const double vLim1 = pnjlim(res.vn[1] + step[1], res.vn[1], config_.vtEffR, config_.vCritR);
+        const double dLim[2]{vLim0 - res.vn[0], vLim1 - res.vn[1]};
+        const double dLimInf = infNorm2(dLim[0], dLim[1]);
+        const double cappedStepL2 = l2Norm2(dLim[0], dLim[1]);
+
         double damp = 1.0;
         bool accepted = false;
         std::array<double, 2> bestVn = res.vn;
@@ -159,13 +172,17 @@ SolverResult NewtonSolver::solveSinglePass(const std::array<double, 2>& p,
         double bestGL2 = gL2;
         double bestGInf = gInf;
 
+        // First 20 iterations: pure SPICE pnjlim Newton (halving damp only if domain guard !valid).
+        // Beyond iteration 20: enforce Deuflhard / residual-decreasing backtracking as fallback.
+        const bool enforceBacktrack = (it >= 20);
+
         for (std::uint32_t sub = 0; sub < config_.maxBacktrackSteps; ++sub) {
             if (sub > 0) {
                 ++res.subIterations;
             }
             const std::array<double, 2> vnTry{
-                res.vn[0] + damp * step[0],
-                res.vn[1] + damp * step[1]
+                res.vn[0] + damp * dLim[0],
+                res.vn[1] + damp * dLim[1]
             };
             const BjtEvaluation evTry = evalFn(vnTry[0], vnTry[1], bjtCtx);
             if (evTry.valid) {
@@ -174,20 +191,23 @@ SolverResult NewtonSolver::solveSinglePass(const std::array<double, 2>& p,
                 if (std::isfinite(gTry[0]) && std::isfinite(gTry[1])) {
                     const double gTryL2 = l2Norm2(gTry[0], gTry[1]);
                     const double gTryInf = infNorm2(gTry[0], gTry[1]);
-                    const double armijoTarget = (1.0 - 1e-4 * damp) * gL2;
 
-                    // Deuflhard natural monotonicity test: ||J_k^{-1} g(v_try)||_2 <= (1 - 0.5*damp) ||step||_2
-                    double simpStep[2]{0.0, 0.0};
-                    const double negGTry[2]{-gTry[0], -gTry[1]};
-                    bool naturalOk = false;
-                    if (solve2x2(J, negGTry, simpStep)) {
-                        const double simpL2 = l2Norm2(simpStep[0], simpStep[1]);
-                        const double refStep = (damp < 1.0 || stepInf <= config_.maxStepVolts) ? cappedStepL2 : fullStepL2;
-                        naturalOk = (simpL2 <= (1.0 - 0.5 * damp * (stepInf <= config_.maxStepVolts ? 1.0 : 0.25)) * refStep) &&
-                                    (gTryInf < 1e4 * std::max(1.0, gInf));
+                    bool stepOk = !enforceBacktrack;
+                    if (enforceBacktrack) {
+                        const double armijoTarget = (1.0 - 1e-4 * damp) * gL2;
+                        double simpStep[2]{0.0, 0.0};
+                        const double negGTry[2]{-gTry[0], -gTry[1]};
+                        bool naturalOk = false;
+                        if (solve2x2(J, negGTry, simpStep)) {
+                            const double simpL2 = l2Norm2(simpStep[0], simpStep[1]);
+                            const double refStep = (damp < 1.0) ? cappedStepL2 : fullStepL2;
+                            naturalOk = (simpL2 <= (1.0 - 0.5 * damp) * refStep) &&
+                                        (gTryInf < 1e6 * std::max(1.0, gInf));
+                        }
+                        stepOk = (gTryL2 <= armijoTarget || gTryL2 < gL2 || naturalOk);
                     }
 
-                    if (gTryL2 <= armijoTarget || gTryL2 < gL2 || naturalOk) {
+                    if (stepOk) {
                         bestVn = vnTry;
                         bestEval = evTry;
                         bestG[0] = gTry[0];
@@ -211,14 +231,13 @@ SolverResult NewtonSolver::solveSinglePass(const std::array<double, 2>& p,
         }
 
         if (!accepted) {
-            // Try gradient-aligned tiny nudge if line search could not decrease norm
             res.iterations = it + 1;
             res.finalResidual = gInf;
             res.converged = false;
             return res;
         }
 
-        const double actualStepInf = damp * infNorm2(step[0], step[1]);
+        const double actualStepInf = damp * dLimInf;
         res.vn = bestVn;
         res.eval = bestEval;
         g[0] = bestG[0];
@@ -229,12 +248,9 @@ SolverResult NewtonSolver::solveSinglePass(const std::array<double, 2>& p,
         res.iterations = it + 1;
 
         const double tol = config_.absTol + config_.relTol * infNorm2(res.vn[0], res.vn[1]);
-        if (gInf <= tol && actualStepInf <= config_.stepTol) {
-            res.converged = true;
-            return res;
-        }
-        // Also accept when residual is far below numerical floor
-        if (gInf <= config_.absTol * 0.1) {
+        if ((gInf <= tol && actualStepInf <= config_.stepTol) ||
+            (gInf <= 1e-12) ||
+            (actualStepInf <= 1e-14 && gInf <= 1e-9)) {
             res.converged = true;
             return res;
         }
@@ -273,13 +289,13 @@ SolverResult NewtonSolver::solve(const std::array<double, 2>& p,
         return dcAttempt;
     }
 
-    // Recovery Stage 2: 4-step continuation (homotopy) from pFallbackBase -> p
+    // Recovery Stage 2: 16-step continuation (homotopy) from pFallbackBase -> p
     if (std::isfinite(pFallbackBase[0]) && std::isfinite(pFallbackBase[1]) &&
         std::isfinite(p[0]) && std::isfinite(p[1])) {
         std::array<double, 2> contGuess = dcFallbackGuess;
         bool contOk = true;
         SolverResult contRes{};
-        constexpr int kSteps = 4;
+        constexpr int kSteps = 16;
         for (int s = 1; s <= kSteps; ++s) {
             const double alpha = static_cast<double>(s) / static_cast<double>(kSteps);
             const std::array<double, 2> pStep{

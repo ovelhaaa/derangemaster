@@ -9,12 +9,17 @@
 namespace rangemaster {
 
 struct NewtonSolverConfig {
-    std::uint32_t maxIterations{32};
-    std::uint32_t maxBacktrackSteps{12};
+    std::uint32_t maxIterations{40};
+    std::uint32_t maxBacktrackSteps{16};
     double absTol{1e-11};
     double relTol{1e-11};
-    double stepTol{1e-11};
-    double maxStepVolts{0.25};
+    double stepTol{1e-9};
+    double maxStepVolts{2.5};
+    // SPICE pnjlim thermal voltages & critical junction voltages (updated per transistor)
+    double vtEffF{0.028};
+    double vtEffR{0.028};
+    double vCritF{0.15};
+    double vCritR{0.15};
 };
 
 struct SolverResult {

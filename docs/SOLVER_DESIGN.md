@@ -43,14 +43,15 @@ For $k = 0, \dots, \text{maxIterations}-1$:
 2. Compute voltage residual $g = p + F_N f - v_n^{(k)}$ and infinity norm $\|g\|_\infty = \max(|g_0|, |g_1|)$.
 3. Compute step $\Delta v = -J_g^{-1} g$ where $J_g = F_N \frac{\partial f}{\partial v_n} - I_2$:
    - **Ill-conditioning guard**: if $|\det(J_g)| < 10^{-15} (\|J_g\|_F^2 + 1)$ or non-finite, apply Tikhonov/Levenberg-Marquardt damping $J_{\text{reg}} = J_g - \lambda I_2$ ($\lambda = 10^{-6}$, escalating if needed) so the step remains a descent direction.
-4. **Step-size limiting** (motivated by [Holmes & van Walstijn 2015]): clamp each component of $\Delta v$ so $\max(|\Delta v_0|, |\Delta v_1|) \le \Delta V_{\max} = 0.25\,\text{V}$ (preserving step direction by uniform scaling: if $\|\Delta v\|_\infty > \Delta V_{\max}$, $\Delta v \leftarrow \Delta v \cdot (\Delta V_{\max} / \|\Delta v\|_\infty)$).
+4. **SPICE `pnjlim` Logarithmic Junction Limiting + Step Cap**:
+   Before evaluating trial steps, each junction voltage update passes through Nagel's (1975) SPICE `pnjlim(v_new, v_old, N*V_T, V_crit)` logarithmic damping when $v_{\text{new}} > V_{\text{crit}}$ and $|\Delta v| > 2 N V_T$, with $V_{\text{crit}} = N V_T \ln\big(N V_T / (\sqrt{2} I_s)\big)$. This eliminates exponential overshoot on large forward-bias steps while permitting fast linear traversal across reverse-biased cutoff (capped at $2.5\,\text{V}$ per iteration).
 5. **Domain-guarded Affine-Invariant (Deuflhard) + Residual Backtracking Line Search**:
-   - Trial step $v_{\text{try}} = v_n^{(k)} + \alpha_{\text{ls}} \Delta v$ starting at $\alpha_{\text{ls}} = 1.0$, halving $\alpha_{\text{ls}} \leftarrow 0.5 \alpha_{\text{ls}}$ up to `maxBacktrackSteps = 12`.
+   - Trial step $v_{\text{try}} = v_n^{(k)} + \alpha_{\text{ls}} \Delta v_{\text{lim}}$ starting at $\alpha_{\text{ls}} = 1.0$, halving $\alpha_{\text{ls}} \leftarrow 0.5 \alpha_{\text{ls}}$ up to `maxBacktrackSteps = 16`.
    - Reject trial immediately if `!eval.valid` (e.g., Gummel-Poon $1 - V_{eb}/V_{ar} - V_{cb}/V_{af} \le 10^{-6}$, $1 + 4 q_2 \le 10^{-12}$, or non-finite).
-   - Accept if either the residual norm decreases ($\|g_{\text{try}}\|_2 \le (1 - 10^{-4}\alpha_{\text{ls}})\|g\|_2$) **or** Deuflhard's affine-invariant natural monotonicity criterion holds ($\|J_k^{-1} g_{\text{try}}\|_2 \le (1 - c\alpha_{\text{ls}})\|\Delta v\|_2$ with bounded residual ratio), preventing step-stalling when crossing from flat active/cutoff regions into steep exponential saturation knees.
+   - Accept if `pnjlim` actively clamped a forward step (at $\alpha_{\text{ls}} = 1$ with bounded residual), or the residual norm decreases, **or** Deuflhard's affine-invariant natural monotonicity criterion holds ($\|J_k^{-1} g_{\text{try}}\|_2 \le (1 - c\alpha_{\text{ls}})\|\Delta v\|_2$).
 6. **Convergence test** (both residual and step tolerance):
    $$\|g_{\text{try}}\|_\infty \le \varepsilon_{\text{abs}} + \varepsilon_{\text{rel}} \|v_n\|_\infty \quad \text{AND} \quad \|\alpha_{\text{ls}} \Delta v\|_\infty \le \varepsilon_{\text{step}}$$
-   with defaults $\varepsilon_{\text{abs}} = 10^{-11}\,\text{V}$, $\varepsilon_{\text{rel}} = 10^{-11}$, $\varepsilon_{\text{step}} = 10^{-11}\,\text{V}$.
+   with defaults $\varepsilon_{\text{abs}} = 10^{-12}\,\text{V}$, $\varepsilon_{\text{rel}} = 10^{-12}$, $\varepsilon_{\text{step}} = 10^{-12}\,\text{V}$.
 
 ---
 
@@ -58,7 +59,7 @@ For $k = 0, \dots, \text{maxIterations}-1$:
 
 If the primary warm-started Damped Newton loop does not converge within `maxIterations`:
 1. **Stage 1 — DC Operating Point Re-initialization**: Reset trial guess to $v_{n,\text{dc}}$ and run Damped Newton (handles extreme discontinuous transients where `vn_prev` is far in cutoff/saturation). Increment `recoveryEvents`.
-2. **Stage 2 — 4-Step Source Continuation (Homotopy)**: Linearly interpolate from $p_{\text{dc}} = E_N u_{\text{dc}}$ (or $p_{\text{prev}}$) to $p[n]$ across $s \in \{0.25, 0.5, 0.75, 1.0\}$, solving each intermediate step with Damped Newton warm-started from the previous continuation step.
+2. **Stage 2 — 8-Step Source Continuation (Homotopy)**: Linearly interpolate from $p_{\text{dc}} = E_N u_{\text{dc}}$ to $p[n]$ across $s \in \{1/8, 2/8, \dots, 1\}$, solving each intermediate step with Damped Newton warm-started from the previous continuation step.
 3. **Stage 3 — Safe Hold Fallback**: If all stages still fail or produce non-finite values, increment `convergenceFailures` (and `nonFiniteEvents` if applicable), **hold the previous valid** $(v_n, f(v_n), x)$ without advancing unstable capacitor states, and return `converged = false`. No `NaN`, `Inf`, or aggressive clipping is ever emitted.
 
 ---

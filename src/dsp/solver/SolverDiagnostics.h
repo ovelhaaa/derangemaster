@@ -6,7 +6,7 @@
 namespace rangemaster {
 
 struct SolverDiagnostics {
-    static constexpr std::uint32_t kHistogramSize = 33;
+    static constexpr std::uint32_t kHistogramSize = 41;
 
     std::uint64_t totalCalls{0};
     std::uint64_t totalIterations{0};

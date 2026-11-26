@@ -2,6 +2,7 @@
 
 #include "dsp/circuit/RangemasterCircuit.h"
 #include "dsp/core/ParameterState.h"
+#include "dsp/oversampling/Oversampler.h"
 
 #include <cstddef>
 
@@ -26,14 +27,17 @@ public:
     void resetDiagnostics() noexcept { circuit_.resetDiagnostics(); }
     [[nodiscard]] double sampleRate() const noexcept { return baseSampleRateHz_; }
     [[nodiscard]] double internalSampleRate() const noexcept {
-        return baseSampleRateHz_ * static_cast<double>(static_cast<int>(params_.oversampling));
+        return baseSampleRateHz_ * static_cast<double>(oversampler_.factorInt());
     }
-    [[nodiscard]] double latencySamples() const noexcept { return 0.0; }
+    [[nodiscard]] double latencySamples() const noexcept {
+        return oversampler_.latencySamplesBaseRate();
+    }
 
 private:
     double baseSampleRateHz_{48000.0};
     std::size_t maxBlockSize_{512};
     ParameterState params_{};
+    Oversampler oversampler_{};
     RangemasterCircuit circuit_{};
 };
 

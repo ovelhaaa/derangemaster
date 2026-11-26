@@ -8,11 +8,13 @@ bool RangemasterEngine::prepare(double sampleRateHz,
     baseSampleRateHz_ = sampleRateHz;
     maxBlockSize_ = maxBlockSize;
     params_ = params;
-    const double internalFs = baseSampleRateHz_ * static_cast<double>(static_cast<int>(params_.oversampling));
+    oversampler_.prepare(params_.oversampling);
+    const double internalFs = baseSampleRateHz_ * static_cast<double>(oversampler_.factorInt());
     return circuit_.prepare(internalFs, params_.circuit);
 }
 
 bool RangemasterEngine::reset() noexcept {
+    oversampler_.reset();
     return circuit_.resetToDcOperatingPoint();
 }
 
@@ -26,15 +28,23 @@ bool RangemasterEngine::setParameters(const ParameterState& params) noexcept {
 }
 
 double RangemasterEngine::processSample(double inputSample) noexcept {
-    const double vin = inputSample * params_.inputVolts;
-    const double vout = circuit_.processSampleVolts(vin);
-    return vout * params_.outputGainLinear();
+    const double vinScale = params_.inputVolts;
+    const double voutVolts = oversampler_.processSample(
+        inputSample,
+        [this, vinScale](double osSample) noexcept {
+            return circuit_.processSampleVolts(osSample * vinScale);
+        });
+    return voutVolts * params_.outputGainLinear();
 }
 
 double RangemasterEngine::processSampleWithProbe(double inputSample, NodeProbe& probe) noexcept {
-    const double vin = inputSample * params_.inputVolts;
-    const double vout = circuit_.processSampleWithProbe(vin, probe);
-    return vout * params_.outputGainLinear();
+    const double vinScale = params_.inputVolts;
+    const double voutVolts = oversampler_.processSample(
+        inputSample,
+        [this, vinScale, &probe](double osSample) noexcept {
+            return circuit_.processSampleWithProbe(osSample * vinScale, probe);
+        });
+    return voutVolts * params_.outputGainLinear();
 }
 
 void RangemasterEngine::processBlock(const double* input,

@@ -49,6 +49,25 @@ bool RangemasterCircuit::prepare(double sampleRateHz, const CircuitParameters& p
         return false;
     }
 
+    // Configure SPICE pnjlim critical junction voltages from active transistor parameters
+    NewtonSolverConfig scfg = solver_.config();
+    const bool isCal = (params_.engine == EngineType::PublishedCalibratedOC44);
+    const bool isGP = (params_.engine == EngineType::GummelPoonDC ||
+                       params_.engine == EngineType::GummelPoonAC);
+    const double vtF = isCal ? (publishedCalibratedSet().bjt.Nf * publishedCalibratedSet().bjt.Vt)
+                             : (isGP ? (profile_->gummelPoon.Nf * profile_->gummelPoon.Vt)
+                                     : (profile_->ebersMoll.Nf * profile_->ebersMoll.Vt));
+    const double vtR = isCal ? (publishedCalibratedSet().bjt.Nr * publishedCalibratedSet().bjt.Vt)
+                             : (isGP ? (profile_->gummelPoon.Nr * profile_->gummelPoon.Vt)
+                                     : (profile_->ebersMoll.Nr * profile_->ebersMoll.Vt));
+    const double isVal = isCal ? publishedCalibratedSet().bjt.Is
+                               : (isGP ? profile_->gummelPoon.Is : profile_->ebersMoll.Is);
+    scfg.vtEffF = vtF;
+    scfg.vtEffR = vtR;
+    scfg.vCritF = vtF * std::log(std::max(1.0, vtF / (1.4142135623730951 * isVal)));
+    scfg.vCritR = vtR * std::log(std::max(1.0, vtR / (1.4142135623730951 * isVal)));
+    solver_.setConfig(scfg);
+
     diag_.reset();
     prepared_ = computeDcOperatingPoint(true);
     return prepared_;

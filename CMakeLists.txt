@@ -16,6 +16,8 @@ set(RANGEMASTER_CORE_SOURCES
     src/dsp/solver/NewtonSolver.cpp
     src/dsp/circuit/CircuitMatrices.cpp
     src/dsp/circuit/RangemasterCircuit.cpp
+    src/dsp/oversampling/HalfbandFilter.cpp
+    src/dsp/oversampling/Oversampler.cpp
     src/dsp/core/RangemasterEngine.cpp
 )
 
@@ -56,4 +58,12 @@ if(RANGEMASTER_BUILD_TESTS AND NOT RANGEMASTER_BUILD_WASM)
     add_executable(test_all_engines_profiles tests/circuit/test_all_engines_profiles.cpp)
     target_link_libraries(test_all_engines_profiles PRIVATE rangemaster_core)
     add_test(NAME circuit.all_engines_profiles COMMAND test_all_engines_profiles)
+
+    add_executable(test_robustness tests/numerical/test_robustness.cpp)
+    target_link_libraries(test_robustness PRIVATE rangemaster_core)
+    add_test(NAME numerical.robustness COMMAND test_robustness)
+
+    add_executable(test_consistency tests/regression/test_consistency.cpp)
+    target_link_libraries(test_consistency PRIVATE rangemaster_core)
+    add_test(NAME regression.consistency COMMAND test_consistency)
 endif()
