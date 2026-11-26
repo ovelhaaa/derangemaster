@@ -34,6 +34,37 @@ int main() {
     check(std::abs(rangemaster_get_internal_sample_rate(h) - 384000.0) < 1e-9, "internal rate query");
     check(std::abs(rangemaster_get_latency_samples(h) - 39.875) < 1e-9, "latency query");
 
+    RangemasterConfigC original{};
+    original.abiVersion = rangemaster_get_config_abi_version();
+    original.structSize = rangemaster_get_config_struct_size();
+    check(rangemaster_get_config(h, &original) == 1, "get complete config");
+    const auto rebuilds = rangemaster_get_matrix_rebuild_count(h);
+    auto invalid = original;
+    invalid.engine = 1;
+    invalid.boost = 0.4;
+    invalid.inputVolts = 0.7;
+    invalid.outputRefVolts = -1;
+    check(rangemaster_apply_config(h, &invalid) == -109, "identify invalid intermediate output reference");
+    RangemasterConfigC after = original;
+    check(rangemaster_get_config(h, &after) == 1, "read after rejection");
+    check(after.engine == original.engine && after.boost == original.boost && after.inputVolts == original.inputVolts,
+          "complete rollback including earlier physical/digital fields");
+    check(rangemaster_get_matrix_rebuild_count(h) == rebuilds, "rejection builds nothing");
+    auto digital = original;
+    digital.outputTrimDb = -3;
+    check(rangemaster_apply_config(h, &digital) == 1, "atomic digital update");
+    check(rangemaster_get_matrix_rebuild_count(h) == rebuilds, "digital builds nothing");
+    auto physical = original;
+    physical.boost = 0.8;
+    physical.supplyVolts = 8.5;
+    physical.biasTrim = 1.1;
+    check(rangemaster_apply_config(h, &physical) == 1, "atomic multiple physical update");
+    check(rangemaster_get_matrix_rebuild_count(h) == rebuilds + 1, "one physical rebuild");
+    check(rangemaster_apply_config(h, &original) == 1, "restore original");
+    check(rangemaster_reset(h) == 1, "reset original");
+    invalid = original; invalid.abiVersion = 99;
+    check(rangemaster_apply_config(h, &invalid) == -2, "reject unknown ABI");
+
     RangemasterDcOpC dc{};
     rangemaster_get_dc_operating_point(h, &dc);
     check(dc.converged == 1, "DC operating point converged via C ABI");
