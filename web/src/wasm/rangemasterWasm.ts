@@ -15,6 +15,10 @@ export interface RangemasterWasmModule {
   HEAPU32: Uint32Array;
   HEAPF32: Float32Array;
   HEAPF64: Float64Array;
+  _rangemaster_apply_config(h: number, ptr: number): number;
+  _rangemaster_get_config(h: number, ptr: number): number;
+  _rangemaster_get_config_abi_version(): number;
+  _rangemaster_get_config_struct_size(): number;
   _malloc(bytes: number): number;
   _free(ptr: number): void;
   _rangemaster_create(): number;
@@ -71,31 +75,34 @@ export function applyFullConfigToHandle(
   h: number,
   cfg: DspSlotConfig
 ): { ok: boolean; error?: string } {
-  const engineId = ENGINE_META[cfg.engine]?.id ?? 3;
-  const txMeta = getTransistorMeta(cfg.transistorId);
-  const checks: Array<[string, number]> = [
-    ['engine', M._rangemaster_set_engine(h, engineId)],
-    ['transistor', M._rangemaster_set_transistor(h, txMeta.index)],
-    ['oversampling', M._rangemaster_set_oversampling(h, cfg.oversampling)],
-    ['gpAblation', M._rangemaster_set_gp_ablation(h, ablationToMask(cfg.gpAblation))],
-    ['rangeNf', M._rangemaster_set_range_nf(h, cfg.rangeNf)],
-    ['boost', M._rangemaster_set_boost(h, cfg.boost)],
-    ['potTaper', M._rangemaster_set_pot_taper(h, cfg.potTaper)],
-    ['boostLinearApprox', M._rangemaster_set_boost_linear_approx(h, cfg.boostLinearApprox ? 1 : 0)],
-    ['inputVolts', M._rangemaster_set_input_volts(h, cfg.inputVolts)],
-    ['outputRefVolts', M._rangemaster_set_output_ref_volts(h, cfg.outputRefVolts)],
-    ['outputTrimDb', M._rangemaster_set_output_trim_db(h, cfg.outputTrimDb)],
-    ['biasTrim', M._rangemaster_set_bias_trim(h, cfg.biasTrim)],
-    ['supplyVolts', M._rangemaster_set_supply_volts(h, cfg.supplyVolts)],
-    ['sourceOhms', M._rangemaster_set_source_ohms(h, cfg.sourceOhms)],
-    ['loadOhms', M._rangemaster_set_load_ohms(h, cfg.loadOhms)],
-  ];
-  for (const [name, rc] of checks) {
-    if (rc !== 1) {
-      return { ok: false, error: `Parameter '${name}' rejected by DSP core` };
-    }
+  if (M._rangemaster_get_config_abi_version() !== 1 || M._rangemaster_get_config_struct_size() !== 104) {
+    return { ok: false, error: 'Configuration ABI mismatch; rebuild WASM' };
   }
-  return { ok: true };
+  const ptr = M._malloc(104);
+  if (!ptr) return { ok: false, error: 'Configuration allocation failed' };
+  try {
+    writeConfig(new DataView(M.HEAPU8.buffer, ptr, 104), cfg);
+    const rc = M._rangemaster_apply_config(h, ptr);
+    return rc === 1 ? { ok: true } : { ok: false, error: `Configuration rejected: ${CONFIG_FIELDS[-rc - 100] ?? 'ABI/core failure'} (${rc})` };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  } finally { M._free(ptr); }
+}
+
+export const CONFIG_FIELDS = ['abiVersion', 'structSize', 'engine', 'transistor', 'oversampling', 'gpAblationMask',
+  'boost', 'rangeNf', 'inputVolts', 'outputRefVolts', 'outputTrimDb', 'biasTrim', 'supplyVolts', 'sourceOhms', 'loadOhms', 'potTaper', 'boostLinearApprox'];
+export const CONFIG_OFFSETS = [0, 4, 8, 12, 16, 20, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 100];
+export function writeConfig(v: DataView, cfg: DspSlotConfig): void {
+  // Do not silently substitute an unknown imported engine/transistor.
+  if (typeof cfg.boostLinearApprox !== 'boolean' || !cfg.gpAblation ||
+      Object.values(cfg.gpAblation).length !== 5 || Object.values(cfg.gpAblation).some(x => typeof x !== 'boolean')) throw new Error('Invalid boolean/ablation fields');
+  const tx = getTransistorMeta(cfg.transistorId);
+  if (!ENGINE_META[cfg.engine] || tx.id !== cfg.transistorId) throw new Error('Unknown engine/transistor');
+  const values = [1, 104, ENGINE_META[cfg.engine].id, tx.index, cfg.oversampling, ablationToMask(cfg.gpAblation),
+    cfg.boost, cfg.rangeNf, cfg.inputVolts, cfg.outputRefVolts, cfg.outputTrimDb, cfg.biasTrim, cfg.supplyVolts,
+    cfg.sourceOhms, cfg.loadOhms, cfg.potTaper, cfg.boostLinearApprox ? 1 : 0];
+  if (values.some(x => !Number.isFinite(x))) throw new Error('Missing/non-finite configuration field');
+  values.forEach((x, i) => i >= 6 && i < 15 ? v.setFloat64(CONFIG_OFFSETS[i], x, true) : v.setInt32(CONFIG_OFFSETS[i], x, true));
 }
 
 function readU64(u32: Uint32Array, idx32: number): number {

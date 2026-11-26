@@ -1,3 +1,4 @@
+import { LAB_LATENCY, readAligned } from '../audio/LatencyAlignment';
 import {
   applyFullConfigToHandle,
   instantiateRangemasterWasm,
@@ -18,10 +19,10 @@ declare function registerProcessor(name: string, processorCtor: typeof AudioWork
 declare const sampleRate: number;
 
 const MAX_QUANTUM = 1024;
-const RING_SIZE = 2048;
+const RING_SIZE = 65536;
 const RING_MASK = RING_SIZE - 1;
 const SCOPE_LEN = 512;
-const WARMUP_SAMPLES = 256;
+const WARMUP_SAMPLES = 16384;
 const XFADE_SAMPLES = 256;
 const BYPASS_XFADE_SAMPLES = 64;
 
@@ -62,6 +63,9 @@ function isCategoryAOnly(a: DspSlotConfig, b: DspSlotConfig): boolean {
 class RangemasterWorkletProcessor extends AudioWorkletProcessor {
   private M: RangemasterWasmModule | null = null;
   private ready = false;
+  private capture = new Float32Array(48000 * 10);
+  private captureLength = 0;
+  private capturePosition = 0;
 
   private hActive = 0;
   private hCand = 0;
@@ -78,7 +82,19 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
 
   private activeConfig: DspSlotConfig = cloneConfig(NOMINAL_DEFAULT_CONFIG);
   private candConfig: DspSlotConfig = cloneConfig(NOMINAL_DEFAULT_CONFIG);
-  private pendingConfig: { config: DspSlotConfig; slot: SlotId } | null = null;
+  private pendingConfig: { config: DspSlotConfig; slot: SlotId; gain: number; id: number } | null = null;
+  private state: 'IDLE' | 'REQUEST_PENDING' | 'PREPARE_CANDIDATE' | 'WARMUP' | 'CROSSFADE' | 'COMMIT' | 'REJECTED' = 'IDLE';
+  private requestId = 0;
+  private activeRequestId = 0;
+  private candidateRequestId = 0;
+  private historyTotal = 0;
+  private warmupCursor = 0;
+  private warmPtr = 0;
+  private warmOutPtr = 0;
+  private warmView: Float64Array | null = null;
+  private warmOutView: Float64Array | null = null;
+  private validationHandle = 0;
+  private physicalNextSample = 0;
 
   private activeSlot: SlotId = 'A';
   private candSlot: SlotId = 'A';
@@ -121,6 +137,11 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
   private blockPeakOut = 0.0;
   private blockSqOut = 0.0;
   private blockCountStats = 0;
+  private timingRing = new Float64Array(4096);
+  private timingCount = 0;
+  private timingWrite = 0;
+  private clockResolutionUs = Infinity;
+  private previousClock = 0;
   private procUsSum = 0.0;
   private procUsMax = 0.0;
   private deadlineOverruns = 0;
@@ -146,19 +167,33 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
     if (!this.ready || !this.M) {
       return;
     }
-    if (type === 'set-config') {
+    if (type === 'capture-reference') {
+      this.captureLength = Math.min(this.capture.length, Math.round(sampleRate * Math.max(3, Math.min(5, Number(msg.seconds) || 4))));
+      this.capturePosition = 0;
+    } else if (type === 'set-config') {
       const cfg = msg.config as DspSlotConfig;
       const slot = (msg.slot as SlotId) || this.activeSlot;
       const matchGain = typeof msg.levelMatchGain === 'number' && Number.isFinite(msg.levelMatchGain)
         ? msg.levelMatchGain
         : 1.0;
-      this.applyConfigUpdate(cfg, slot, matchGain);
+      const id = Number(msg.requestId);
+      if (!Number.isSafeInteger(id) || id <= this.requestId) return;
+      this.requestId = id;
+      const checked = applyFullConfigToHandle(this.M, this.validationHandle, cfg);
+      if (!checked.ok || !Number.isFinite(matchGain) || matchGain < 0.01 || matchGain > 100) {
+        this.rejectUpdate(checked.error || 'Invalid match gain', id);
+        return;
+      }
+      this.pendingConfig = { config: cloneConfig(cfg), slot, gain: matchGain, id };
+      if (this.state === 'IDLE' || this.state === 'REJECTED') this.state = 'REQUEST_PENDING';
     } else if (type === 'set-bypass') {
       this.bypassed = Boolean(msg.bypassed);
     } else if (type === 'set-level-match') {
       const g = Number(msg.gain);
       if (Number.isFinite(g) && g >= 0.01 && g <= 100.0) {
         this.targetLevelMatchGain = g;
+        this.candLevelMatchGain = g;
+        if (this.pendingConfig) this.pendingConfig.gain = g;
       }
     } else if (type === 'reset-diagnostics') {
       this.M._rangemaster_reset_diagnostics(this.hActive);
@@ -201,6 +236,14 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
       const dcPtr = M._malloc(128);
       const condPtr = M._malloc(32);
 
+      this.validationHandle = M._rangemaster_create();
+      this.warmPtr = M._malloc(MAX_QUANTUM * 8);
+      this.warmOutPtr = M._malloc(MAX_QUANTUM * 8);
+      if (![hA, hB, inPtr, outActivePtr, outCandPtr, diagPtr, dcPtr, condPtr, this.validationHandle, this.warmPtr, this.warmOutPtr].every(Boolean)) {
+        throw new Error('WASM allocation failed');
+      }
+      this.warmView = new Float64Array(M.HEAPF64.buffer, this.warmPtr, MAX_QUANTUM);
+      this.warmOutView = new Float64Array(M.HEAPF64.buffer, this.warmOutPtr, MAX_QUANTUM);
       this.M = M;
       this.hActive = hA;
       this.hCand = hB;
@@ -226,7 +269,10 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
       this.port.postMessage({
         type: 'wasm-ready',
         sampleRate,
-        latencySamples: this.activeLatency,
+        latencySamples: LAB_LATENCY,
+        internalLatencySamples: this.activeLatency,
+        transitionState: this.state,
+        requestedId: this.requestId, activeRequestId: this.activeRequestId, candidateRequestId: this.candidateRequestId,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -235,93 +281,74 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
     }
   }
 
-  private applyConfigUpdate(cfg: DspSlotConfig, slot: SlotId, matchGain: number): void {
-    if (!this.M || !this.ready) return;
-
-    if (this.xfadeActive) {
-      this.pendingConfig = { config: cloneConfig(cfg), slot };
-      this.targetLevelMatchGain = matchGain;
-      return;
-    }
-
-    // Category A or B update on active instance without crossfade
-    if (slot === this.activeSlot && !isStructuralChange(this.activeConfig, cfg)) {
-      if (isCategoryAOnly(this.activeConfig, cfg)) {
-        const okIn = this.M._rangemaster_set_input_volts(this.hActive, cfg.inputVolts);
-        const okRef = this.M._rangemaster_set_output_ref_volts(this.hActive, cfg.outputRefVolts);
-        const okTrim = this.M._rangemaster_set_output_trim_db(this.hActive, cfg.outputTrimDb);
-        if (okIn !== 1 || okRef !== 1 || okTrim !== 1) {
-          this.rejectUpdate('Digital gain parameter out of bounds');
-          return;
-        }
-        this.activeConfig.inputVolts = cfg.inputVolts;
-        this.activeConfig.outputRefVolts = cfg.outputRefVolts;
-        this.activeConfig.outputTrimDb = cfg.outputTrimDb;
-        this.targetLevelMatchGain = matchGain;
-        return;
-      }
-
-      const res = applyFullConfigToHandle(this.M, this.hActive, cfg);
-      if (!res.ok) {
-        // Transactional C++ core preserved previous valid state
-        this.rejectUpdate(res.error || 'Circuit update rejected');
-        return;
-      }
-      this.activeConfig = cloneConfig(cfg);
-      this.targetLevelMatchGain = matchGain;
-      return;
-    }
-
-    // Category C or A/B slot switch -> prepare candidate instance, warmup, latency-align, crossfade
-    const res = applyFullConfigToHandle(this.M, this.hCand, cfg);
-    if (!res.ok) {
-      this.rejectUpdate(res.error || 'Structural candidate rejected');
-      return;
-    }
-    if (this.M._rangemaster_reset(this.hCand) !== 1) {
-      this.rejectUpdate('Candidate reset failed');
-      return;
-    }
-
-    // Feed last 256 samples of recent input history to warm up candidate C1/C2/C3 state
-    if (this.inView) {
-      const start = (this.warmupWrite - WARMUP_SAMPLES + RING_SIZE) & RING_MASK;
-      for (let i = 0; i < WARMUP_SAMPLES; ++i) {
-        this.inView[i] = this.warmupInputRing[(start + i) & RING_MASK];
-      }
-      this.M._rangemaster_process_f64(this.hCand, this.inPtr, this.outCandPtr, WARMUP_SAMPLES);
-    }
-
-    this.candConfig = cloneConfig(cfg);
-    this.candSlot = slot;
-    this.candLatency = this.M._rangemaster_get_latency_samples(this.hCand);
-    this.candLevelMatchGain = matchGain;
-    this.activeDelayRing.fill(0);
-    this.candDelayRing.fill(0);
-    this.xfadePos = 0;
-    this.xfadeActive = true;
+  private acknowledge(kind: string, id: number): void {
+    this.port.postMessage({ type: 'config-applied', kind, requestId: id,
+      activeConfig: cloneConfig(this.activeConfig), activeSlot: this.activeSlot });
   }
 
-  private rejectUpdate(reason: string): void {
+  // Called only at the beginning of a quantum. Message handlers only validate/coalesce.
+  private advanceBoundary(n: number): void {
+    if (!this.M) return;
+    if (this.state === 'COMMIT') this.finishCrossfade();
+    if ((this.state === 'IDLE' || this.state === 'REQUEST_PENDING' || this.state === 'REJECTED') && this.pendingConfig) {
+      const p = this.pendingConfig;
+      const digital = isCategoryAOnly(this.activeConfig, p.config);
+      if (!digital && this.historyTotal < this.physicalNextSample) return;
+      this.pendingConfig = null;
+      this.state = 'PREPARE_CANDIDATE';
+      this.physicalNextSample = this.historyTotal + Math.round(sampleRate / 20); // physical cap 20 Hz
+      if (JSON.stringify(p.config) === JSON.stringify(this.activeConfig) ||
+          (p.slot === this.activeSlot && !isStructuralChange(this.activeConfig, p.config))) {
+        const result = applyFullConfigToHandle(this.M, this.hActive, p.config);
+        if (!result.ok) { this.rejectUpdate(result.error || 'Update failed', p.id); return; }
+        this.activeConfig = cloneConfig(p.config);
+        this.activeSlot = p.slot;
+        this.activeRequestId = p.id;
+        this.targetLevelMatchGain = p.gain;
+        this.state = this.pendingConfig ? 'REQUEST_PENDING' : 'IDLE';
+        this.acknowledge(digital ? 'digital' : 'physical', p.id);
+        return;
+      }
+      const result = applyFullConfigToHandle(this.M, this.hCand, p.config);
+      if (!result.ok || this.M._rangemaster_reset(this.hCand) !== 1) {
+        this.rejectUpdate(result.error || 'Candidate reset failed', p.id); return;
+      }
+      this.candConfig = cloneConfig(p.config);
+      this.candSlot = p.slot;
+      this.candidateRequestId = p.id;
+      this.candLevelMatchGain = p.gain;
+      this.candLatency = this.M._rangemaster_get_latency_samples(this.hCand);
+      this.warmupCursor = Math.max(0, this.historyTotal - WARMUP_SAMPLES);
+      this.candDelayRing.fill(0); // inactive candidate only; fully populated before fade
+      this.candDelayWrite = 0;
+      this.state = 'WARMUP';
+      this.port.postMessage({ type: 'transition-start', requestId: p.id });
+    }
+    if (this.state === 'WARMUP' && this.warmView && this.warmOutView) {
+      // At most two quanta of replay per callback, using independent WASM storage.
+      const count = Math.min(2 * n, MAX_QUANTUM, this.historyTotal - this.warmupCursor);
+      for (let i = 0; i < count; ++i) this.warmView[i] = this.warmupInputRing[(this.warmupCursor + i) & RING_MASK];
+      if (count) this.M._rangemaster_process_f64(this.hCand, this.warmPtr, this.warmOutPtr, count);
+      for (let i = 0; i < count; ++i) {
+        this.candDelayRing[this.candDelayWrite] = this.warmOutView[i];
+        this.candDelayWrite = (this.candDelayWrite + 1) & RING_MASK;
+      }
+      this.warmupCursor += count;
+      if (this.warmupCursor === this.historyTotal) {
+        this.state = 'CROSSFADE'; this.xfadeActive = true; this.xfadePos = 0;
+      }
+    }
+  }
+
+  private rejectUpdate(reason: string, id: number): void {
     this.lastError = reason;
-    this.port.postMessage({
-      type: 'param-rejected',
-      reason,
-      activeConfig: cloneConfig(this.activeConfig),
-      activeSlot: this.activeSlot,
-    });
+    if (!this.xfadeActive && this.state !== 'WARMUP') this.state = 'REJECTED';
+    this.port.postMessage({ type: 'param-rejected', requestId: id, reason,
+      activeConfig: cloneConfig(this.activeConfig), activeSlot: this.activeSlot });
   }
 
   private readDelayed(ring: Float32Array, writeIdx: number, delaySamples: number): number {
-    if (delaySamples <= 0.0) {
-      return ring[(writeIdx - 1 + RING_SIZE) & RING_MASK];
-    }
-    const clamped = Math.min(delaySamples, RING_SIZE - 4);
-    const dInt = Math.floor(clamped);
-    const frac = clamped - dInt;
-    const i0 = (writeIdx - 1 - dInt + RING_SIZE) & RING_MASK;
-    const i1 = (writeIdx - 2 - dInt + RING_SIZE) & RING_MASK;
-    return ring[i0] * (1.0 - frac) + ring[i1] * frac;
+    return readAligned(ring, writeIdx, delaySamples);
   }
 
   process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
@@ -346,6 +373,7 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
     }
 
     const t0 = nowMicros();
+    this.advanceBoundary(n);
     const M = this.M;
 
     // 1. Mix mono/stereo input safely & populate warmup/dry rings
@@ -360,8 +388,10 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
         s = 0.0;
       }
       this.inView[i] = s;
+      if (this.captureLength && this.capturePosition < this.captureLength) this.capture[this.capturePosition++] = s;
       this.warmupInputRing[this.warmupWrite] = s;
       this.warmupWrite = (this.warmupWrite + 1) & RING_MASK;
+      ++this.historyTotal;
       this.dryRing[this.dryWrite] = s;
       this.dryWrite = (this.dryWrite + 1) & RING_MASK;
 
@@ -379,7 +409,7 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
     // 3. Latency alignment, crossfade, level match, bypass crossfade & scope ring
     const targetBypass = this.bypassed ? 1.0 : 0.0;
     const bypassStep = 1.0 / BYPASS_XFADE_SAMPLES;
-    const maxLat = this.xfadeActive ? Math.max(this.activeLatency, this.candLatency) : this.activeLatency;
+    const maxLat = LAB_LATENCY;
     const extraActiveDelay = Math.max(0.0, maxLat - this.activeLatency);
     const extraCandDelay = Math.max(0.0, maxLat - this.candLatency);
 
@@ -404,11 +434,11 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
         wetSample = (1.0 - wCand) * aAligned + wCand * cAligned;
         ++this.xfadePos;
         if (this.xfadePos >= XFADE_SAMPLES) {
-          this.finishCrossfade();
+          this.state = 'COMMIT';
         }
       } else {
         this.currentLevelMatchGain += 0.01 * (this.targetLevelMatchGain - this.currentLevelMatchGain);
-        wetSample = wetActRaw * this.currentLevelMatchGain;
+        wetSample = this.readDelayed(this.activeDelayRing, this.activeDelayWrite, extraActiveDelay) * this.currentLevelMatchGain;
       }
 
       if (this.bypassMix < targetBypass) {
@@ -418,7 +448,7 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
       }
 
       const dryReadBase = (this.dryWrite - (n - 1 - i) + RING_SIZE * 2) & RING_MASK;
-      const dryAligned = this.readDelayed(this.dryRing, dryReadBase, this.activeLatency);
+      const dryAligned = this.readDelayed(this.dryRing, dryReadBase, LAB_LATENCY);
       const outSample = (1.0 - this.bypassMix) * wetSample + this.bypassMix * dryAligned;
       outL[i] = Number.isFinite(outSample) ? outSample : 0.0;
 
@@ -435,19 +465,31 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
       out[ch].set(outL);
     }
 
+    if (this.captureLength && this.capturePosition >= this.captureLength) {
+      const samples = this.capture.slice(0, this.captureLength);
+      this.captureLength = 0;
+      this.port.postMessage({ type: 'capture-complete', samples }, [samples.buffer]);
+    }
     // 4. Timing & periodic telemetry
-    const elapsedUs = Math.max(0.0, nowMicros() - t0);
     const quantumBudgetUs = (n / sampleRate) * 1e6;
+    this.samplesSinceTelemetry += n;
+    if (this.samplesSinceTelemetry >= this.telemetryIntervalSamples) {
+      this.emitTelemetry(quantumBudgetUs);
+    }
+
+    const elapsedUs = Math.max(0.0, nowMicros() - t0);
+    this.timingRing[this.timingWrite++ & 4095] = elapsedUs;
+    ++this.timingCount;
+    const clockNow = nowMicros();
+    const delta = clockNow - this.previousClock;
+    if (delta > 0) this.clockResolutionUs = Math.min(this.clockResolutionUs, delta);
+    if (elapsedUs > 0) this.clockResolutionUs = Math.min(this.clockResolutionUs, elapsedUs);
+    this.previousClock = clockNow;
     this.procUsSum += elapsedUs;
     if (elapsedUs > this.procUsMax) this.procUsMax = elapsedUs;
     ++this.blockCountStats;
     if (elapsedUs > quantumBudgetUs) {
       ++this.deadlineOverruns;
-    }
-
-    this.samplesSinceTelemetry += n;
-    if (this.samplesSinceTelemetry >= this.telemetryIntervalSamples) {
-      this.emitTelemetry(quantumBudgetUs);
     }
 
     return true;
@@ -466,11 +508,13 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
     this.xfadeActive = false;
     this.xfadePos = 0;
 
-    if (this.pendingConfig) {
-      const pend = this.pendingConfig;
-      this.pendingConfig = null;
-      this.applyConfigUpdate(pend.config, pend.slot, this.targetLevelMatchGain);
-    }
+    const ring = this.activeDelayRing;
+    this.activeDelayRing = this.candDelayRing;
+    this.candDelayRing = ring;
+    this.activeDelayWrite = this.candDelayWrite;
+    this.activeRequestId = this.candidateRequestId;
+    this.state = this.pendingConfig ? 'REQUEST_PENDING' : 'IDLE';
+    this.acknowledge('transition-complete', this.activeRequestId);
   }
 
   private emitTelemetry(quantumBudgetUs: number): void {
@@ -483,6 +527,8 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
     const dcOp = readDcOpFromPtr(M, this.dcPtr);
     const cond = readConditioning(M, this.hActive, this.condPtr);
 
+    const timings = Array.from(this.timingRing.subarray(0, Math.min(this.timingCount, 4096))).sort((a,b) => a-b);
+    const percentile = (p: number) => timings[Math.min(timings.length - 1, Math.floor(p * timings.length))] || 0;
     const nSamples = Math.max(1, this.samplesSinceTelemetry);
     for (let i = 0; i < SCOPE_LEN; ++i) {
       const idx = (this.scopeWrite + i) & (SCOPE_LEN - 1);
@@ -495,7 +541,10 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
       telemetry: {
         sampleRate,
         internalSampleRate: M._rangemaster_get_internal_sample_rate(this.hActive),
-        latencySamples: this.activeLatency,
+        latencySamples: LAB_LATENCY,
+        internalLatencySamples: this.activeLatency,
+        transitionState: this.state,
+        requestedId: this.requestId, activeRequestId: this.activeRequestId, candidateRequestId: this.candidateRequestId,
         matrixRebuildCount: M._rangemaster_get_matrix_rebuild_count(this.hActive),
         activeSlot: this.activeSlot,
         bypassed: this.bypassed,
@@ -505,6 +554,11 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
         outPeak: this.blockPeakOut,
         outRms: Math.sqrt(this.blockSqOut / nSamples),
         clipped: this.blockPeakOut > 1.0,
+        clock: typeof performance !== 'undefined' ? 'performance.now' : 'Date.now',
+        observedClockStepUs: Number.isFinite(this.clockResolutionUs) ? this.clockResolutionUs : null,
+        callbackCount: this.timingCount,
+        processP95Us: percentile(0.95), processP99Us: percentile(0.99), processP999Us: percentile(0.999),
+        timingWindow: timings.length,
         processTimeMeanUs: this.blockCountStats > 0 ? this.procUsSum / this.blockCountStats : 0.0,
         processTimeMaxUs: this.procUsMax,
         quantumBudgetUs,

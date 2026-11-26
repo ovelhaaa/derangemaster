@@ -6,6 +6,8 @@ import { LiveInputInfo, requestLiveInputStream } from './LiveInputSource';
 import { generateTestBuffer } from './TestSignalGenerator';
 
 export interface EngineCallbacks {
+  onConfigApplied?: (config: DspSlotConfig, slot: SlotId, kind: string) => void;
+  onCapture?: (samples: Float32Array) => void;
   onReady: (sampleRate: number) => void;
   onTelemetry: (t: WorkletTelemetry) => void;
   onError: (msg: string) => void;
@@ -25,6 +27,9 @@ function makeAuxAmpCurve(samples = 1024): Float32Array<ArrayBuffer> {
 }
 
 export class RangemasterAudioEngine {
+  private requestId = 0;
+  private confirmedRequestId = 0;
+  private captureResolve: ((s: Float32Array) => void) | null = null;
   private ctx: AudioContext | null = null;
   private wasmBinary: ArrayBuffer | null = null;
   private offlineWasm: RangemasterWasmModule | null = null;
@@ -100,7 +105,12 @@ export class RangemasterAudioEngine {
         this.callbacks.onError(msg.error);
       } else if (msg.type === 'telemetry') {
         this.callbacks.onTelemetry(msg.telemetry as WorkletTelemetry);
-      } else if (msg.type === 'param-rejected') {
+      } else if (msg.type === 'capture-complete') {
+        this.captureResolve?.(msg.samples); this.captureResolve = null;
+      } else if (msg.type === 'config-applied' && msg.requestId > this.confirmedRequestId) {
+        this.confirmedRequestId = msg.requestId;
+        this.callbacks.onConfigApplied?.(msg.activeConfig, msg.activeSlot, msg.kind);
+      } else if (msg.type === 'param-rejected' && msg.requestId === this.requestId) {
         this.callbacks.onParamRejected(msg.reason, msg.activeConfig, msg.activeSlot);
       }
     };
@@ -124,8 +134,9 @@ export class RangemasterAudioEngine {
     this.auxShaper.oversample = '2x';
 
     this.convolver = this.ctx.createConvolver();
-    this.convolver.normalize = true;
-    this.convolver.buffer = this.createDefaultSyntheticDebugNoticeIr(this.ctx.sampleRate);
+    this.convolver.normalize = false;
+    this.cabinetIrBuffer = this.createDefaultSyntheticDebugNoticeIr(this.ctx.sampleRate);
+    this.convolver.buffer = this.cabinetIrBuffer;
 
     this.monitorGain = this.ctx.createGain();
     this.monitorGain.gain.value = this.monitorVol;
@@ -221,7 +232,16 @@ export class RangemasterAudioEngine {
   }
 
   setConfig(config: DspSlotConfig, slot: SlotId, levelMatchGain = 1.0): void {
-    this.workletNode?.port.postMessage({ type: 'set-config', config, slot, levelMatchGain });
+    this.workletNode?.port.postMessage({ type: 'set-config', requestId: ++this.requestId, config, slot, levelMatchGain });
+  }
+
+  captureReference(seconds = 4): Promise<Float32Array> {
+    if (!this.workletNode || this.ctx?.state !== 'running') return Promise.reject(new Error('Start audio before capture'));
+    if (this.captureResolve) return Promise.reject(new Error('Capture already in progress'));
+    return new Promise(resolve => {
+      this.captureResolve = resolve;
+      this.workletNode!.port.postMessage({ type: 'capture-reference', seconds });
+    });
   }
 
   setBypass(bypassed: boolean): void {
