@@ -94,14 +94,16 @@ export const CONFIG_FIELDS = ['abiVersion', 'structSize', 'engine', 'transistor'
 export const CONFIG_OFFSETS = [0, 4, 8, 12, 16, 20, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 100];
 export function writeConfig(v: DataView, cfg: DspSlotConfig): void {
   // Do not silently substitute an unknown imported engine/transistor.
+  const ablationKeys = ['enableJunctionCaps', 'enableEarlyEffect', 'enableLeakageCurrents', 'enableHighCurrentRolloff', 'enableTerminalResistances'] as const;
   if (typeof cfg.boostLinearApprox !== 'boolean' || !cfg.gpAblation ||
-      Object.values(cfg.gpAblation).length !== 5 || Object.values(cfg.gpAblation).some(x => typeof x !== 'boolean')) throw new Error('Invalid boolean/ablation fields');
+      ablationKeys.some(key => typeof cfg.gpAblation[key] !== 'boolean')) throw new Error('Invalid boolean/ablation fields');
   const tx = getTransistorMeta(cfg.transistorId);
   if (!ENGINE_META[cfg.engine] || tx.id !== cfg.transistorId) throw new Error('Unknown engine/transistor');
   const values = [1, 104, ENGINE_META[cfg.engine].id, tx.index, cfg.oversampling, ablationToMask(cfg.gpAblation),
     cfg.boost, cfg.rangeNf, cfg.inputVolts, cfg.outputRefVolts, cfg.outputTrimDb, cfg.biasTrim, cfg.supplyVolts,
     cfg.sourceOhms, cfg.loadOhms, cfg.potTaper, cfg.boostLinearApprox ? 1 : 0];
   if (values.some(x => !Number.isFinite(x))) throw new Error('Missing/non-finite configuration field');
+  if ([2, 3, 4, 5, 15, 16].some(i => !Number.isInteger(values[i]))) throw new Error('Non-integer configuration enum');
   values.forEach((x, i) => i >= 6 && i < 15 ? v.setFloat64(CONFIG_OFFSETS[i], x, true) : v.setInt32(CONFIG_OFFSETS[i], x, true));
 }
 

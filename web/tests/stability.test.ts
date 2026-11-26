@@ -50,6 +50,8 @@ describe('C ABI on real WASM', () => {
   });
   test('invalid imported names are rejected, never replaced by nominal defaults', () => {
     expect(() => writeConfig(new DataView(new ArrayBuffer(104)), {...cfg(),transistorId:'unknown'})).toThrow();
+    expect(() => writeConfig(new DataView(new ArrayBuffer(104)), {...cfg(),oversampling:8.7} as any)).toThrow(/integer/);
+    expect(() => writeConfig(new DataView(new ArrayBuffer(104)), {...cfg(),gpAblation:{a:true,b:true,c:true,d:true,e:true}} as any)).toThrow(/ablation/);
   });
   test('latency table', () => {
     const h = M._rangemaster_create();
