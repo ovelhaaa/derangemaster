@@ -11,7 +11,7 @@ test('browser audio, worker and listening smoke', async ({ page }) => {
   await page.getByRole('button', { name: 'Synthetic reference', exact: true }).click();
   await page.getByRole('button', { name: 'Match RMS A/B', exact: true }).click();
   await expect(page.getByRole('button', { name: /^Matched/ })).toBeVisible({ timeout: 60000 });
-  await page.screenshot({ path: '../artifacts/m71/listening.png', fullPage: true });
+  await page.screenshot({ path: 'test-results/listening.png', fullPage: true });
   await page.getByRole('button', { name: 'Blind Test', exact: true }).click();
   await expect(page.getByRole('button', { name: /Suspend Audio/ })).not.toBeVisible();
   await expect(page.getByLabel('Listening session')).not.toBeVisible();
