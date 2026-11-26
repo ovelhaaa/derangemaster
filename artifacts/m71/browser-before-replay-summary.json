@@ -1,0 +1,32 @@
+{
+  "elapsed_ms": 600046.5,
+  "requests": 3000,
+  "telemetry_records": 7470,
+  "callbacks_at_last_telemetry": 224099,
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/159.0.8154.6 Safari/537.36",
+  "console_errors": [],
+  "rejections": 0,
+  "clock": "Date.now",
+  "observed_clock_step_us": 1000,
+  "callback_budget_us": 2666.6666666666665,
+  "measured_over_budget": 19149,
+  "measured_over_budget_percent": 8.544884180652302,
+  "whole_run_mean_us": null,
+  "whole_run_max_us": 53000,
+  "whole_run_p95_us": null,
+  "whole_run_p99_us": null,
+  "whole_run_p999_us": null,
+  "histogram_bin_us": null,
+  "last_window_p95_us": 3000,
+  "last_window_p99_us": 4000,
+  "last_window_p999_us": 5000,
+  "js_heap_min_bytes": 10000000,
+  "js_heap_max_bytes": 10000000,
+  "wasm_memory_bytes": null,
+  "maximum_observed_active_instance_counters": {
+    "convergenceFailures": 0,
+    "nonFiniteEvents": 0,
+    "budgetExhaustionEvents": 0
+  },
+  "limitations": "Date.now is quantized; histogram quantiles are bin lower bounds. Counters are maxima observed on active handles, not exhaustive aggregate instrumentation of all rejected preparations. JS heap can be coarsened. Measured callback overruns are not device underruns."
+}

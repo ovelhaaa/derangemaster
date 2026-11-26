@@ -51,4 +51,37 @@ Este documento registra com transparência as limitações físicas, numéricas 
 ## 7. Cadeia Auxiliar de Monitoramento e Alinhamento de Latência no Navegador
 
 - O modo opcional **`Aux Amp + IR`** na cadeia de monitoramento do laboratório WASM utiliza uma curva de saturação simples auxiliar para audição musical em fones; **não** constitui emulação física validada de um amplificador valvulado específico e pode ser desativado integralmente (`Direct`) ou substituído por qualquer WAV de Cabinet IR próprio do usuário.
-- A compensação de latência fracionária no sinal `Dry` do `AudioWorklet` utiliza interpolação linear de 2 pontos, suficiente para alinhamento de fase na audição comparativa, embora não seja um filtro all-pass fracionário de ordem alta próximo a Nyquist.
+- M7.1 replaces linear Dry interpolation with an exact integer 73-sample delay and a 63-tap fractional FIR on wet paths. Near-Nyquist limitations remain; see the measured frequency-response report.
+
+## M7.1 remaining qualification limits
+
+- Real guitar capture is implemented, but no physical guitar/interface was available
+  for the automated tests. Musical preference and real-device dropout checks remain
+  the user's listening step. Synthetic DI is explicitly identified.
+- Replay length 16,384 is validated on a nominal amplitude-step sine across all five
+  engines, not every technical impedance, sample rate or saturation history.
+  Nonidentical configurations use a controlled transition, not exact state transfer.
+- Preparation remains on the audio thread at a block boundary. Progressive replay
+  bounds replay work, but a slow machine can still miss a deadline during matrix/DC
+  preparation. Timing telemetry must be inspected; device underruns are not measured.
+- Level matching discards 250 ms, aligns the same interval and rejects silence or
+  gains outside 0.05..8. It is static RMS matching, not perceptual equivalence.
+- Full Tail has bounded two-second circuit decay plus bounded IR extension; extreme
+  allowed time constants may remain above silence at the cutoff.
+- Auxiliary WaveShaper oversampling and Convolver scheduling are browser algorithms;
+  exact live/offline null equivalence of that optional chain has not been established.
+- Worklet sample buffers are fixed, but telemetry, control messages and completed
+  capture copies allocate. JS heap readings include test harness allocations and GC.
+- Offline jobs can be terminated; browser-native monitoring renders may finish in
+  the background before cancellation is observed. No audio is sent to a server.
+- Pages returned HTTP 404. Hosted smoke testing cannot be claimed until publication.
+  Select GitHub Actions in repository Settings > Pages. Local CI does not prove deploy.
+- Native/WASM equivalence is currently sampled for engines A-D at 8x; it is not a new
+  exhaustive numerical requalification across every physical parameter combination.
+
+- The final ten-minute stress recording still reports 2304 / 225089 callbacks above
+  the 2.667 ms budget (1.024%), measured with 1 ms quantization. P95 is 2 ms,
+  P99/P99.9 3 ms and maximum 7 ms. Do not claim strict real-time qualification;
+  use 8x as a first listening setting and inspect this machine's callback telemetry.
+- The optional monitoring export is mono; stereo IR/live monitoring need not null
+  exactly against that fold-down. IR hash, channels, sample rate and gain are recorded.
