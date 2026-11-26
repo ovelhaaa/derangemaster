@@ -109,8 +109,10 @@ export interface BlindSessionEntry {
   preferred: 'X' | 'Y' | 'tie';
   revealedX: SlotId;
   revealedY: SlotId;
-  slotAConfig: { engine: EngineKey; transistorId: string; oversampling: OversamplingFactor; rangeNf: number };
-  slotBConfig: { engine: EngineKey; transistorId: string; oversampling: OversamplingFactor; rangeNf: number };
+  slotAConfig: DspSlotConfig;
+  slotBConfig: DspSlotConfig;
+  presentationOrder: Array<'X' | 'Y'>;
+  levelMethod: string;
   notes: string;
   timestampIso: string;
 }

@@ -1,3 +1,5 @@
+import { alignedExcerpt, LAB_LATENCY } from './LatencyAlignment';
+import { BUILD_INFO } from '../wasm/build-info';
 import {
   applyFullConfigToHandle,
   RangemasterWasmModule,
@@ -7,6 +9,7 @@ import {
 import { DspSlotConfig, MonitorMode } from '../state/types';
 
 export interface ExportOptions {
+  mode?: 'raw' | 'latency-compensated' | 'full-tail';
   target: 'dry' | 'A' | 'B';
   levelMatched: boolean;
   matchGain: number;
@@ -58,19 +61,21 @@ function makeAuxAmpCurve(samples = 1024): Float32Array<ArrayBuffer> {
   return curve;
 }
 
-async function applyMonitoringOffline(
+export async function applyMonitoringOffline(
   samples: Float32Array,
   sampleRate: number,
   mode: MonitorMode,
   irBuffer: AudioBuffer | null,
-  monitorVol: number
+  monitorVol: number,
+  retainIrTail = false
 ): Promise<Float32Array<ArrayBuffer>> {
   if (mode === 'direct') {
     const pass = new Float32Array(new ArrayBuffer(samples.length * 4));
-    pass.set(samples);
+    for (let i = 0; i < samples.length; ++i) pass[i] = samples[i] * monitorVol;
     return pass;
   }
-  const offline = new OfflineAudioContext(1, samples.length, sampleRate);
+  const extraTail = retainIrTail ? Math.min(Math.round(sampleRate * 10), (irBuffer?.length || 1) - 1 + (mode === 'aux-amp-ir' ? 256 : 0)) : 0;
+  const offline = new OfflineAudioContext(1, samples.length + extraTail, sampleRate);
   const srcBuf = offline.createBuffer(1, samples.length, sampleRate);
   srcBuf.getChannelData(0).set(samples);
   const src = offline.createBufferSource();
@@ -86,7 +91,7 @@ async function applyMonitoringOffline(
   }
   if (irBuffer) {
     const conv = offline.createConvolver();
-    conv.normalize = true;
+    conv.normalize = false;
     conv.buffer = irBuffer;
     node.connect(conv);
     node = conv;
@@ -107,9 +112,17 @@ export async function exportWavAndManifest(
   M: RangemasterWasmModule,
   inputSamples: Float32Array,
   sampleRate: number,
-  opts: ExportOptions
+  opts: ExportOptions,
+  progress?: (value: number) => void
 ): Promise<{ wavBlob: Blob; manifestJson: string; filenameBase: string }> {
   const blockSize = 4096;
+  const mode = opts.mode || 'raw';
+  const originalLength = inputSamples.length;
+  const extra = mode === 'full-tail' ? Math.round(sampleRate * 2) : mode === 'latency-compensated' ? 64 : 0;
+  const padded = new Float32Array(originalLength + extra);
+  padded.set(inputSamples);
+  const inputHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new Float32Array(inputSamples).buffer))).map(x => x.toString(16).padStart(2, '0')).join('');
+  inputSamples = padded;
   let rendered = new Float32Array(new ArrayBuffer(inputSamples.length * 4));
   let diag: ReturnType<typeof readDiagnosticsFromPtr> | null = null;
   let dcOp: ReturnType<typeof readDcOpFromPtr> | null = null;
@@ -131,10 +144,15 @@ export async function exportWavAndManifest(
     const outPtr = M._malloc(blockSize * 8);
     const diagPtr = M._malloc(256);
     const dcPtr = M._malloc(128);
+    if (![h, inPtr, outPtr, diagPtr, dcPtr].every(Boolean)) {
+      for (const ptr of [inPtr, outPtr, diagPtr, dcPtr]) if (ptr) M._free(ptr);
+      M._rangemaster_destroy(h); throw new Error('Export allocation failed');
+    }
     const inView = new Float64Array(M.HEAPF64.buffer, inPtr, blockSize);
     const outView = new Float64Array(M.HEAPF64.buffer, outPtr, blockSize);
 
     for (let off = 0; off < inputSamples.length; off += blockSize) {
+      progress?.(0.1 + 0.8 * off / inputSamples.length);
       const count = Math.min(blockSize, inputSamples.length - off);
       for (let i = 0; i < count; ++i) inView[i] = inputSamples[off + i];
       M._rangemaster_process_f64(h, inPtr, outPtr, count);
@@ -155,7 +173,10 @@ export async function exportWavAndManifest(
     M._rangemaster_destroy(h);
   }
 
-  if (opts.includeMonitoring && opts.monitorMode !== 'direct') {
+  if (mode === 'latency-compensated') {
+    rendered = alignedExcerpt(rendered, latencySamples, originalLength);
+  }
+  if (opts.includeMonitoring) {
     rendered = await applyMonitoringOffline(
       rendered,
       sampleRate,
@@ -170,8 +191,15 @@ export async function exportWavAndManifest(
 
   const manifest = {
     product: 'DERangeMaster — Germanium Circuit Lab',
-    core_version: 'M7',
-    baseline_commit: 'e21c68bc7c751ff383e8a4f5b10ad245a1e03528',
+    core_version: 'M7.1 (M7 physical core)',
+    build: BUILD_INFO,
+    config_abi_version: M._rangemaster_get_config_abi_version(),
+    input_sha256: inputHash,
+    export_mode: mode,
+    tail_seconds: mode === 'full-tail' ? 2 : 0,
+    solver_profile: 'Reference',
+    laboratory_latency_samples: LAB_LATENCY,
+    export_laboratory_latency_added: 0,
     export_target: opts.target,
     input_identification: opts.inputLabel,
     sample_rate_hz: sampleRate,
@@ -187,6 +215,8 @@ export async function exportWavAndManifest(
     monitoring_chain: {
       included: opts.includeMonitoring,
       mode: opts.includeMonitoring ? opts.monitorMode : 'direct',
+      monitor_volume: opts.monitorVolume, convolver_normalize: false,
+      ir: opts.cabinetIrBuffer ? { sample_rate: opts.cabinetIrBuffer.sampleRate, length: opts.cabinetIrBuffer.length } : null,
     },
     dsp_configuration: opts.slotConfig,
     dc_operating_point: dcOp,

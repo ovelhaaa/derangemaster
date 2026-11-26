@@ -1,9 +1,12 @@
+import { applyFullConfigToHandle } from './wasm/rangemasterWasm';
+import { ListeningSession } from './components/ListeningSession';
+import { runOffline } from './audio/OfflineWorkerClient';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RangemasterAudioEngine } from './audio/AudioEngine';
 import { decodeAudioFileToMono, extractWaveformPeaks } from './audio/FileSource';
-import { computeFileLevelMatchGains, computeRms, renderWasmSlice } from './audio/LevelMatch';
+import { computeRms, renderWasmSlice } from './audio/LevelMatch';
 import { AudioDeviceOption, listAudioInputDevices, LiveInputInfo } from './audio/LiveInputSource';
-import { exportWavAndManifest } from './audio/OfflineExport';
+import { applyMonitoringOffline } from './audio/OfflineExport';
 import { generateTestBuffer } from './audio/TestSignalGenerator';
 import { NOMINAL_DEFAULT_CONFIG, PRESET_LIST } from './state/presets';
 import { DspSlotConfig, MonitorMode, SlotId, SourceMode, TestSignalType, WorkletTelemetry } from './state/types';
@@ -27,6 +30,12 @@ function cloneConfig(c: DspSlotConfig): DspSlotConfig {
 export const App: React.FC = () => {
   const engineRef = useRef<RangemasterAudioEngine | null>(null);
 
+  const [confirmed, setConfirmed] = useState<{ config: DspSlotConfig; slot: SlotId }>({ config: cloneConfig(NOMINAL_DEFAULT_CONFIG), slot: 'A' });
+  const [reference, setReference] = useState<Float32Array | null>(null);
+  const [captureStatus, setCaptureStatus] = useState('No captured reference');
+  const [offlineProgress, setOfflineProgress] = useState<number | null>(null);
+  const offlineAbort = useRef<AbortController | null>(null);
+  const calibrationGeneration = useRef(0);
   const [audioReady, setAudioReady] = useState(false);
   const [contextState, setContextState] = useState<AudioContextState | 'uninitialized'>('uninitialized');
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
@@ -106,10 +115,13 @@ export const App: React.FC = () => {
         setDurationSec(samples.length / sr);
         setLoopEndSec(samples.length / sr);
       },
+      onConfigApplied: (config, slot) => { setConfirmed({ config: cloneConfig(config), slot }); },
       onTelemetry: (t) => setTelemetry(t),
       onError: (msg) => setErrorBanner(msg),
       onParamRejected: (reason, confirmedCfg, confirmedSlot) => {
         setErrorBanner(`DSP rejected parameter update: ${reason} (rolled back to valid state)`);
+        setActiveSlot(confirmedSlot);
+        setConfirmed({ config: cloneConfig(confirmedCfg), slot: confirmedSlot });
         if (confirmedSlot === 'A') setSlotA(cloneConfig(confirmedCfg));
         else setSlotB(cloneConfig(confirmedCfg));
       },
@@ -151,7 +163,7 @@ export const App: React.FC = () => {
     const next = cloneConfig({ ...activeConfig, ...partial });
     if (activeSlot === 'A') setSlotA(next);
     else setSlotB(next);
-    syncToWorklet(next, activeSlot, levelMatched, matchGainA, matchGainB);
+    syncToWorklet(next, activeSlot, false, 1, 1);
   };
 
   const handleSelectSlot = (slot: SlotId) => {
@@ -192,47 +204,35 @@ export const App: React.FC = () => {
     const cfg = cloneConfig(found.config);
     if (activeSlot === 'A') setSlotA(cfg);
     else setSlotB(cfg);
-    syncToWorklet(cfg, activeSlot, levelMatched, matchGainA, matchGainB);
+    syncToWorklet(cfg, activeSlot, false, 1, 1);
   };
 
   const handleRestoreNominal = () => {
     const nom = cloneConfig(NOMINAL_DEFAULT_CONFIG);
     if (activeSlot === 'A') setSlotA(nom);
     else setSlotB(nom);
-    syncToWorklet(nom, activeSlot, levelMatched, matchGainA, matchGainB);
+    syncToWorklet(nom, activeSlot, false, 1, 1);
   };
 
-  const handleCalibrateMatch = () => {
-    const eng = engineRef.current;
-    const wasm = eng?.getOfflineWasm();
-    const ctx = eng?.getContext();
-    if (!eng || !wasm || !ctx) {
-      setErrorBanner('Start Audio Engine before running Level Match calibration.');
-      return;
-    }
+  useEffect(() => {
+    ++calibrationGeneration.current;
+    setLevelMatched(false); setMatchGainA(1); setMatchGainB(1);
+    engineRef.current?.setLevelMatchGain(1);
+  }, [slotA, slotB, sourceMode, fileName, testSignalType, sineFreqHz, sineAmpVolts, reference, loopStartSec, loopEndSec]);
 
-    if (sourceMode === 'live') {
-      // Live input explicit snapshot calibration: measure active vs candidate over synthetic 440 Hz reference at current inputVolts
-      const refBuf = generateTestBuffer({ type: 'di-riff', sampleRate: ctx.sampleRate, sineFreqHz: 440, sineAmpNorm: 0.5 }).samples;
-      const g = computeFileLevelMatchGains(wasm, refBuf, ctx.sampleRate, slotA, slotB);
-      setMatchGainA(g.gainA);
-      setMatchGainB(g.gainB);
-      setLevelMatched(true);
-      eng.setLevelMatchGain(activeSlot === 'A' ? g.gainA : g.gainB);
-      return;
-    }
-
-    const samples = eng.getActiveMonoSamples();
-    if (samples.length < 256) return;
-    const startIdx = Math.max(0, Math.round(loopStartSec * ctx.sampleRate));
-    const endIdx = Math.min(samples.length, Math.round(loopEndSec * ctx.sampleRate));
-    const excerpt = endIdx > startIdx + 512 ? samples.subarray(startIdx, endIdx) : samples;
-
-    const res = computeFileLevelMatchGains(wasm, excerpt, ctx.sampleRate, slotA, slotB);
-    setMatchGainA(res.gainA);
-    setMatchGainB(res.gainB);
-    setLevelMatched(true);
-    eng.setLevelMatchGain(activeSlot === 'A' ? res.gainA : res.gainB);
+  const handleCalibrateMatch = async () => {
+    const eng = engineRef.current, ctx = eng?.getContext();
+    if (!eng || !ctx || !audioReady) { setErrorBanner('Start Audio Engine before RMS Match'); return; }
+    try {
+      const samples = reference || (sourceMode === 'live' ? null : eng.getActiveMonoSamples().slice(Math.round(loopStartSec * ctx.sampleRate), Math.round(loopEndSec * ctx.sampleRate)));
+      if (!samples) throw new Error('Capture Reference first, or explicitly select a synthetic reference');
+      const generation = calibrationGeneration.current;
+      offlineAbort.current?.abort(); offlineAbort.current = new AbortController(); setOfflineProgress(0);
+      const res = await runOffline<{ gainA: number; gainB: number }>('match', { samples, sampleRate: ctx.sampleRate, slotA, slotB }, setOfflineProgress, offlineAbort.current.signal);
+      if (generation !== calibrationGeneration.current) throw new Error('Calibration outdated: configuration/source changed');
+      setMatchGainA(res.gainA); setMatchGainB(res.gainB); setLevelMatched(true);
+      eng.setLevelMatchGain(activeSlot === 'A' ? res.gainA : res.gainB);
+    } catch (err) { setErrorBanner(String(err)); } finally { setOfflineProgress(null); }
   };
 
   const handleToggleLevelMatch = () => {
@@ -341,7 +341,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleExportWav = async (opts: { target: 'dry' | 'A' | 'B'; levelMatched: boolean; includeMonitoring: boolean }) => {
+  const handleExportWav = async (opts: { mode: 'raw' | 'latency-compensated' | 'full-tail'; target: 'dry' | 'A' | 'B'; levelMatched: boolean; includeMonitoring: boolean }) => {
     const eng = engineRef.current;
     const wasm = eng?.getOfflineWasm();
     const ctx = eng?.getContext();
@@ -349,20 +349,32 @@ export const App: React.FC = () => {
 
     setExportBusy(true);
     try {
-      const samples = eng.getActiveMonoSamples();
+      const samples = reference || eng.getActiveMonoSamples();
       const targetCfg = opts.target === 'B' ? slotB : slotA;
       const mg = opts.target === 'B' ? matchGainB : matchGainA;
-      const res = await exportWavAndManifest(wasm, samples, ctx.sampleRate, {
+      offlineAbort.current?.abort(); offlineAbort.current = new AbortController(); setOfflineProgress(0);
+      const res = await runOffline<{ wavBlob: Blob; manifestJson: string; filenameBase: string }>('export', { samples, sampleRate: ctx.sampleRate, options: {
+        mode: opts.mode,
         target: opts.target,
         levelMatched: opts.levelMatched,
         matchGain: mg,
-        includeMonitoring: opts.includeMonitoring,
+        includeMonitoring: false,
         monitorMode,
-        cabinetIrBuffer: eng.getCabinetIrBuffer(),
+        cabinetIrBuffer: null,
         monitorVolume,
         inputLabel: eng.getActiveInputLabel(),
         slotConfig: targetCfg,
-      });
+      } }, setOfflineProgress, offlineAbort.current.signal);
+      if (opts.includeMonitoring) {
+        const decoded = await ctx.decodeAudioData(await res.wavBlob.arrayBuffer());
+        const monitored = await applyMonitoringOffline(decoded.getChannelData(0), ctx.sampleRate, monitorMode, eng.getCabinetIrBuffer(), monitorVolume, opts.mode === 'full-tail');
+        res.wavBlob = await runOffline<Blob>('encode', { samples: monitored, sampleRate: ctx.sampleRate }, setOfflineProgress, offlineAbort.current.signal);
+        const manifest = JSON.parse(res.manifestJson);
+        const ir = eng.getCabinetIrBuffer();
+        manifest.monitoring_chain = { included: true, mode: monitorMode, volume: monitorVolume, convolver_normalize: false,
+          ir: { name: cabinetIrName || 'neutral unit impulse', length: ir?.length, sample_rate: ir?.sampleRate } };
+        res.manifestJson = JSON.stringify(manifest, null, 2);
+      }
 
       const download = (blob: Blob, name: string) => {
         const url = URL.createObjectURL(blob);
@@ -378,7 +390,7 @@ export const App: React.FC = () => {
     } catch (err) {
       setErrorBanner(err instanceof Error ? err.message : String(err));
     } finally {
-      setExportBusy(false);
+      setExportBusy(false); setOfflineProgress(null);
     }
   };
 
@@ -397,6 +409,14 @@ export const App: React.FC = () => {
     try {
       const data = JSON.parse(await file.text());
       if (data.slotA && data.slotB) {
+        const M = engineRef.current?.getOfflineWasm();
+        if (!M) throw new Error('Start Audio Engine before importing configurations');
+        const validation = M._rangemaster_create();
+        if (!validation) throw new Error('Configuration validation allocation failed');
+        try { for (const config of [data.slotA, data.slotB]) {
+          const result = applyFullConfigToHandle(M, validation, config);
+          if (!result.ok) throw new Error(result.error);
+        } } finally { M._rangemaster_destroy(validation); }
         setSlotA(cloneConfig(data.slotA));
         setSlotB(cloneConfig(data.slotB));
         const nextSlot: SlotId = data.activeSlot === 'B' ? 'B' : 'A';
@@ -414,26 +434,26 @@ export const App: React.FC = () => {
 
   return (
     <div className="lab-shell">
-      <Header
+      {!blindLocked && <Header
         audioReady={audioReady}
         contextState={contextState}
-        activeSlot={activeSlot}
-        activeConfig={activeConfig}
+        activeSlot={audioReady ? confirmed.slot : activeSlot}
+        activeConfig={audioReady ? confirmed.config : activeConfig}
         telemetry={telemetry}
         onInitOrToggleAudio={handleInitOrToggleAudio}
         onOpenExport={() => setExportOpen(true)}
         onExportJsonConfig={handleExportJsonConfig}
         onImportJsonConfig={handleImportJsonConfig}
-      />
+      />}
 
-      {errorBanner && (
+      {errorBanner && !blindLocked && (
         <div className="error-banner" role="alert">
           <span>{errorBanner}</span>
           <button className="btn btn-sm" onClick={() => setErrorBanner(null)}>Dismiss</button>
         </div>
       )}
 
-      <PerformancePanel
+      {!blindLocked && <PerformancePanel
         audioReady={audioReady}
         config={activeConfig}
         telemetry={telemetry}
@@ -497,9 +517,9 @@ export const App: React.FC = () => {
           engineRef.current?.setMonitorVolume(nextMute ? 0 : monitorVolume);
         }}
         onLoadIrFile={handleLoadIrFile}
-      />
+      />}
 
-      <ComparisonPanel
+      {!blindLocked && <ComparisonPanel
         activeSlot={activeSlot}
         slotA={slotA}
         slotB={slotB}
@@ -518,9 +538,31 @@ export const App: React.FC = () => {
         onRestoreNominal={handleRestoreNominal}
         onApplyPreset={handleApplyPreset}
         onUpdateActiveConfig={handleUpdateActiveConfig}
-        onToggleBlindOpen={() => setBlindOpen((o) => !o)}
-      />
+        onToggleBlindOpen={() => { if (!blindOpen && !levelMatched) { setErrorBanner('Calibrate RMS Match using one common excerpt before a blind comparison'); return; } setBlindOpen((o) => !o); }}
+      />}
 
+      {!blindLocked && <section className="panel">
+        <h2 className="section-title">Local Reference · RMS Match / Raw Level</h2>
+        <p>{captureStatus}. Local memory only; no upload. Capture includes the unprocessed current input.</p>
+        <button className="btn" disabled={!audioReady || offlineProgress !== null || captureStatus === 'Capturing 4 seconds…'} onClick={async () => {
+          setCaptureStatus('Capturing 4 seconds…');
+          try {
+            const samples = await engineRef.current!.captureReference(4);
+            let peak = 0; for (const x of samples) peak = Math.max(peak, Math.abs(x));
+            if (computeRms(samples) < 1e-5) throw new Error('Reference silent or insufficient');
+            setReference(samples); setCaptureStatus(`Captured 4 s${peak >= 0.999 ? ' · INPUT CLIPPING' : ''}`);
+          } catch (e) { setCaptureStatus(String(e)); }
+        }}>Capture Reference</button>
+        <button className="btn" onClick={() => { setReference(null); setCaptureStatus('No captured reference'); }}>Discard capture</button>
+        <button className="btn" disabled={!reference} onClick={() => { engineRef.current?.setMonoBuffer(reference!, 'Local guitar capture'); setSourceMode('file'); setFileName('Local guitar capture'); setLoopStartSec(0); setLoopEndSec(reference!.length / engineRef.current!.getContext()!.sampleRate); }}>Use capture offline / loop</button>
+        <button className="btn" onClick={() => { const ctx = engineRef.current?.getContext(); if (ctx) { setReference(generateTestBuffer({ type: 'di-riff', sampleRate: ctx.sampleRate, sineFreqHz: 440, sineAmpNorm: 0.5 }).samples); setCaptureStatus('Explicit synthetic DI reference'); } }}>Synthetic reference</button>
+        {offlineProgress !== null && <p role="status">Offline {Math.round(offlineProgress * 100)}% <button className="btn" onClick={() => offlineAbort.current?.abort()}>Cancel processing</button></p>}
+        {audioReady && <p className="mono">Requested slot {activeSlot}; confirmed DSP slot {confirmed.slot} · {confirmed.config.engine}</p>}
+      </section>}
+      {!blindLocked && <ListeningSession onCompare={(a, b) => {
+        setSlotA(cloneConfig(a)); setSlotB(cloneConfig(b)); setActiveSlot('A');
+        syncToWorklet(a, 'A', false, 1, 1);
+      }} />}
       <BlindComparisonPanel
         open={blindOpen}
         slotA={slotA}
@@ -529,10 +571,11 @@ export const App: React.FC = () => {
         onSelectActualSlot={handleSelectSlot}
         onToggleDry={handleToggleDry}
         onLockChange={setBlindLocked}
+        levelMethod={`RMS static gain A=${matchGainA}, B=${matchGainB}; source=${captureStatus}; monitor=${monitorMode}, volume=${monitorVolume}`}
       />
 
       {/* RESEARCH & DIAGNOSTICS DRAWER */}
-      <section className="panel" aria-label="Research and Scientific Diagnostics">
+      {!blindLocked && <section className="panel" aria-label="Research and Scientific Diagnostics">
         <div className="section-header" style={{ marginBottom: researchOpen ? '12px' : 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <h2 className="section-title">Research &amp; Scientific Diagnostics</h2>
@@ -597,7 +640,7 @@ export const App: React.FC = () => {
             )}
           </div>
         )}
-      </section>
+      </section>}
 
       <ExportModal
         open={exportOpen}
