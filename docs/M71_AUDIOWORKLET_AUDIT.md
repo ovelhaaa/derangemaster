@@ -60,3 +60,9 @@ configuration from eventually being reflected as confirmed. Blind voting is bloc
 while a candidate is pending, preparing or transitioning; controls/status that could
 reveal its identity remain hidden. RMS mode cannot be re-enabled after invalidation
 without a successful new calibration.
+
+Post-circuit RMS control messages carry independent A/B gains so calibration during
+candidate preparation does not apply B's scalar to the still-active A circuit.
+Both gain paths ramp across a fade and the current candidate gain is preserved at
+commit. These are smoothed control changes toward static gains, not signal-driven
+normalization or compression. The crossfade/gain regression uses actual WASM.

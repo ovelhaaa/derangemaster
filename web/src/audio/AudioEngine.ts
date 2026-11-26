@@ -281,6 +281,10 @@ export class RangemasterAudioEngine {
     this.workletNode?.port.postMessage({ type: 'set-level-match', gain });
   }
 
+  setLevelMatchGains(gainA: number, gainB: number): void {
+    this.workletNode?.port.postMessage({ type: 'set-level-match', gainA, gainB });
+  }
+
   resetDiagnostics(): void {
     this.workletNode?.port.postMessage({ type: 'reset-diagnostics' });
   }

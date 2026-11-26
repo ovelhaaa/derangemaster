@@ -104,6 +104,7 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
   private targetLevelMatchGain = 1.0;
   private currentLevelMatchGain = 1.0;
   private candLevelMatchGain = 1.0;
+  private currentCandLevelMatchGain = 1.0;
 
   private activeLatency = 0.0;
   private candLatency = 0.0;
@@ -200,11 +201,12 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
     } else if (type === 'set-bypass') {
       this.bypassed = Boolean(msg.bypassed);
     } else if (type === 'set-level-match') {
-      const g = Number(msg.gain);
-      if (Number.isFinite(g) && g >= 0.01 && g <= 100.0) {
-        this.targetLevelMatchGain = g;
-        this.candLevelMatchGain = g;
-        if (this.pendingConfig) this.pendingConfig.gain = g;
+      const gainA = Number(msg.gainA ?? msg.gain), gainB = Number(msg.gainB ?? msg.gain);
+      if ([gainA, gainB].every(g => Number.isFinite(g) && g >= 0.01 && g <= 100.0)) {
+        const gain = (slot: SlotId) => slot === 'A' ? gainA : gainB;
+        this.targetLevelMatchGain = gain(this.activeSlot);
+        this.candLevelMatchGain = gain(this.candSlot);
+        if (this.pendingConfig) this.pendingConfig.gain = gain(this.pendingConfig.slot);
       }
     } else if (type === 'reset-diagnostics') {
       this.M._rangemaster_reset_diagnostics(this.hActive);
@@ -328,6 +330,7 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
       this.candSlot = p.slot;
       this.candidateRequestId = p.id;
       this.candLevelMatchGain = p.gain;
+      this.currentCandLevelMatchGain = p.gain;
       this.candLatency = this.M._rangemaster_get_latency_samples(this.hCand);
       this.warmupCursor = Math.max(0, this.historyTotal - WARMUP_SAMPLES);
       this.candDelayRing.fill(0); // inactive candidate only; fully populated before fade
@@ -427,6 +430,8 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
     const extraCandDelay = Math.max(0.0, maxLat - this.candLatency);
 
     for (let i = 0; i < n; ++i) {
+      this.currentLevelMatchGain += 0.01 * (this.targetLevelMatchGain - this.currentLevelMatchGain);
+      this.currentCandLevelMatchGain += 0.01 * (this.candLevelMatchGain - this.currentCandLevelMatchGain);
       const wetActRaw = this.outActiveView[i];
       this.activeDelayRing[this.activeDelayWrite] = wetActRaw;
       this.activeDelayWrite = (this.activeDelayWrite + 1) & RING_MASK;
@@ -440,7 +445,7 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
         const aAligned = this.readDelayed(this.activeDelayRing, this.activeDelayWrite, extraActiveDelay) *
           this.currentLevelMatchGain;
         const cAligned = this.readDelayed(this.candDelayRing, this.candDelayWrite, extraCandDelay) *
-          this.candLevelMatchGain;
+          this.currentCandLevelMatchGain;
 
         const t = Math.min(1.0, this.xfadePos / XFADE_SAMPLES);
         const wCand = 0.5 * (1.0 - Math.cos(Math.PI * t));
@@ -450,7 +455,6 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
           this.state = 'COMMIT';
         }
       } else {
-        this.currentLevelMatchGain += 0.01 * (this.targetLevelMatchGain - this.currentLevelMatchGain);
         wetSample = this.readDelayed(this.activeDelayRing, this.activeDelayWrite, extraActiveDelay) * this.currentLevelMatchGain;
       }
 
@@ -520,7 +524,7 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
     this.activeSlot = this.candSlot;
     this.activeLatency = this.candLatency;
     this.targetLevelMatchGain = this.candLevelMatchGain;
-    this.currentLevelMatchGain = this.candLevelMatchGain;
+    this.currentLevelMatchGain = this.currentCandLevelMatchGain;
     this.xfadeActive = false;
     this.xfadePos = 0;
 

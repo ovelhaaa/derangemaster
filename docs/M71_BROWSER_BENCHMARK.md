@@ -63,7 +63,7 @@ while preparing; requested and confirmed configurations are separately visible.
 
 The long run measures the quarter-quantum replay implementation and whole-run timing
 added in `aa9f69d`; subsequent changes concern integrity checking, synchronization,
-metadata, display and capture handling. The 1024-frame case is separately unit-tested.
+metadata, display, capture handling and a separately tested post-circuit gain-ramp fix. Those minor final-path changes have not had another ten-minute run. The 1024-frame case is separately unit-tested.
 The stress generator covers correlated configurations rather than an exhaustive
 cross-product. Solver counters are maxima sampled from active instances, not a new
 exhaustive aggregate solver trace for every rejected candidate.

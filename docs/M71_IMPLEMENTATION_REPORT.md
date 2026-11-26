@@ -32,7 +32,7 @@ oversampling filters are unchanged. No VST3 or new physical model was introduced
 
 ## Validation and practical limits
 
-Native CTest: 9/9, including a clean native build. Full stress: 1326/1326. Web/WASM unit/integration: 17 tests. Browser integration: 4 cases in each of Chromium and Firefox; production subpath smoke passed in both. WASM/web tests exercise the actual compiled module. Equivalence
+Native CTest: 9/9, including a clean native build. Full stress: 1326/1326. Web/WASM unit/integration: 18 tests. Browser integration: 4 cases in each of Chromium and Firefox; production subpath smoke passed in both. WASM/web tests exercise the actual compiled module. Equivalence
 for engines A-D at 8x: maximum absolute difference `2.975e-8` FS against float WAV.
 This is not a new claim covering every sample rate/profile/oversampling combination.
 See [transition validation](M71_TRANSITION_VALIDATION.md) and

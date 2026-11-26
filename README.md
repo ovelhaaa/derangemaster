@@ -129,7 +129,7 @@ Session 01 and calibrate RMS A/B. Record ties freely; the engine choice remains
 musical. The intended [public lab](https://ovelhaaa.github.io/derangemaster/)
 returned 404 during M7.1; enable GitHub Actions as the repository's Pages source.
 
-Qualification: 9 native tests, 1326 stress cases and 17 WASM/web tests pass. Both
+Qualification: 9 native tests, 1326 stress cases and 18 WASM/web tests pass. Both
 Chromium and Firefox pass Worker/audio integration and production-subpath smoke.
 Ten-minute stress runs have zero observed numeric failures, but the reduced-replay
 run still measures 1.024% callbacks over budget with a 1 ms clock. See the browser

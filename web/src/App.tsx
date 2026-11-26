@@ -247,7 +247,7 @@ export const App: React.FC = () => {
       if (generation !== calibrationGeneration.current) throw new Error('Calibration outdated: configuration/source changed');
       setMatchGainA(res.gainA); setMatchGainB(res.gainB); setLevelMatched(true);
       setCalibrationValid(true);
-      eng.setLevelMatchGain(activeSlot === 'A' ? res.gainA : res.gainB);
+      eng.setLevelMatchGains(res.gainA, res.gainB);
     } catch (err) { setErrorBanner(String(err)); } finally { setOfflineProgress(null); }
   };
 
@@ -255,8 +255,7 @@ export const App: React.FC = () => {
     const next = !levelMatched;
     if (next && !calibrationValid) { setErrorBanner('RMS calibration is missing or outdated. Run Match RMS A/B first.'); return; }
     setLevelMatched(next);
-    const g = next ? (activeSlot === 'A' ? matchGainA : matchGainB) : 1.0;
-    engineRef.current?.setLevelMatchGain(g);
+    engineRef.current?.setLevelMatchGains(next ? matchGainA : 1, next ? matchGainB : 1);
   };
 
   const handleSourceModeChange = (mode: SourceMode) => {

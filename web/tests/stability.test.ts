@@ -66,6 +66,18 @@ describe('C ABI on real WASM', () => {
   });
 });
 describe('quantum state machine', () => {
+  test('a match-gain change during fade remains smoothed across commit', async () => {
+    const p = await processor();
+    p.currentLevelMatchGain=.25; p.targetLevelMatchGain=.25;
+    p.handleMessage({type:'set-config',requestId:1,slot:'B',config:{...cfg(),oversampling:1},levelMatchGain:.25});
+    block(p,0); expect(p.state).toBe('CROSSFADE');
+    p.handleMessage({type:'set-level-match',gainA:.5,gainB:1});
+    expect(p.targetLevelMatchGain).toBe(.5); expect(p.candLevelMatchGain).toBe(1);
+    block(p,1); expect(p.state).toBe('COMMIT');
+    expect(p.currentCandLevelMatchGain).toBeLessThan(1);
+    block(p,2); expect(p.activeSlot).toBe('B');
+    expect(p.currentLevelMatchGain).toBeGreaterThan(.9); expect(p.currentLevelMatchGain).toBeLessThan(1);
+  });
   test('identical A/B is sample-exact and preserves state', async () => {
     const p = await processor(), reference = await processor(); let max = 0;
     for (let b=0;b<100;b++) {
