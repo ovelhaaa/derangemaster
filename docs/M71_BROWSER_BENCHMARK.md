@@ -1,6 +1,6 @@
 # M7.1 browser qualification
 
-Environment: Windows, Emscripten 3.1.62, Playwright Chromium and Firefox.
+Environment: Windows locally; Ubuntu 24.04 pinned for WASM/browser CI; Emscripten 3.1.62, Playwright Chromium and Firefox.
 Commands: `npm run test:browser`; prolonged run:
 `$env:RUN_SOAK='1'; npm run test:browser -- --project chromium` in PowerShell.
 
