@@ -27,6 +27,9 @@ jobs:
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: '3.1.62'
+      - name: Setup GitHub Pages
+        id: pages
+        uses: actions/configure-pages@v5
       - name: Build WASM Module
         run: |
           emcmake cmake -B build-wasm -DRANGEMASTER_BUILD_WASM=ON -DCMAKE_BUILD_TYPE=Release
@@ -35,10 +38,25 @@ jobs:
           cp build-wasm/rangemaster_dsp.js web/src/wasm/rangemaster_dsp.js
           cp build-wasm/rangemaster_dsp.wasm web/src/wasm/rangemaster_dsp.wasm
           cp build-wasm/rangemaster_dsp.wasm web/public/wasm/rangemaster_dsp.wasm
-      - name: Build Production Bundle for /derangemaster/
-        env:
-          VITE_BASE_PATH: /derangemaster/
-        run: cd web && npm ci && npm run typecheck && npm run build
+      - name: Build Production Bundle for GitHub Pages
+        run: |
+          RAW_BASE="${{ steps.pages.outputs.base_path }}"
+          if [ -z "$RAW_BASE" ]; then
+            RAW_BASE="/derangemaster"
+          fi
+          case "$RAW_BASE" in
+            */) VITE_BASE="$RAW_BASE" ;;
+            *)  VITE_BASE="${RAW_BASE}/" ;;
+          esac
+          echo "Using VITE_BASE_PATH=$VITE_BASE"
+          cd web
+          npm ci
+          VITE_BASE_PATH="$VITE_BASE" npm run typecheck
+          VITE_BASE_PATH="$VITE_BASE" npm run build
+          touch dist/.nojekyll
+          test -f dist/index.html
+          test -f dist/wasm/rangemaster_dsp.wasm
+          test -f dist/worklet/rangemaster-processor.js
       - name: Upload GitHub Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
