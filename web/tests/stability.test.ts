@@ -79,7 +79,7 @@ describe('quantum state machine', () => {
     p.handleMessage({type:'set-config',requestId:2,slot:'A',config:{...cfg(),oversampling:16},levelMatchGain:.7});
     p.handleMessage({type:'set-config',requestId:3,slot:'B',config:{...cfg(),rangeNf:22},levelMatchGain:.6});
     p.handleMessage({type:'set-config',requestId:4,slot:'A',config:{...cfg(),outputRefVolts:-1},levelMatchGain:1});
-    for(let b=151;b<500;b++) { const h=p.hActive; block(p,b,kind); if(h!==p.hActive) expect(p.xfadePos).toBeLessThan(128); }
+    for(let b=151;b<1600;b++) { const h=p.hActive; block(p,b,kind); if(h!==p.hActive) expect(p.xfadePos).toBeLessThan(128); }
     expect(p.activeSlot).toBe('B'); expect(p.activeRequestId).toBe(3);
     expect(p.activeConfig.rangeNf).toBe(22); expect(p.currentLevelMatchGain).toBeCloseTo(.6);
     expect(p.inPtr).toBe(inputPtr); expect(p.warmPtr).not.toBe(p.inPtr);
@@ -94,7 +94,7 @@ describe('quantum state machine', () => {
     const p = await processor(), input = new Float32Array(1024).fill(.1), out = new Float32Array(1024);
     for (let b=0;b<32;b++) p.process([[input]],[[out]]);
     p.handleMessage({type:'set-config',requestId:1,slot:'B',config:{...cfg(),oversampling:1},levelMatchGain:1});
-    for (let b=0;b<40;b++) p.process([[input]],[[out]]);
+    for (let b=0;b<100;b++) p.process([[input]],[[out]]);
     expect(p.activeSlot).toBe('B'); expect(p.state).toBe('IDLE');
     expect(Array.from(p.inView.slice(0,1024))).toEqual(Array.from(input));
   });

@@ -140,6 +140,9 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
   private timingRing = new Float64Array(4096);
   private timingCount = 0;
   private timingWrite = 0;
+  private timingHistogram = new Uint32Array(1024); // 100 us bins; final bin is overflow
+  private wholeRunUs = 0;
+  private wholeRunMaxUs = 0;
   private clockResolutionUs = Infinity;
   private previousClock = 0;
   private procUsSum = 0.0;
@@ -327,8 +330,8 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
       this.port.postMessage({ type: 'transition-start', requestId: p.id });
     }
     if (this.state === 'WARMUP' && this.warmView && this.warmOutView) {
-      // At most two quanta of replay per callback, using independent WASM storage.
-      const count = Math.min(2 * n, this.historyTotal - this.warmupCursor);
+      // Bound replay to 1.25 quanta; slower catch-up reduces peak competing DSP load.
+      const count = Math.min(n + Math.ceil(n / 4), this.historyTotal - this.warmupCursor);
       for (let i = 0; i < count; ++i) this.warmView[i] = this.warmupInputRing[(this.warmupCursor + i) & RING_MASK];
       for (let off = 0; off < count; off += MAX_QUANTUM) {
         this.M._rangemaster_process_f64(this.hCand, this.warmPtr + off * 8, this.warmOutPtr + off * 8, Math.min(MAX_QUANTUM, count - off));
@@ -484,6 +487,9 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
     const elapsedUs = Math.max(0.0, nowMicros() - t0);
     this.timingRing[this.timingWrite++ & 4095] = elapsedUs;
     ++this.timingCount;
+    ++this.timingHistogram[Math.min(1023, Math.floor(elapsedUs / 100))];
+    this.wholeRunUs += elapsedUs;
+    this.wholeRunMaxUs = Math.max(this.wholeRunMaxUs, elapsedUs);
     const clockNow = nowMicros();
     const delta = clockNow - this.previousClock;
     if (delta > 0) this.clockResolutionUs = Math.min(this.clockResolutionUs, delta);
@@ -533,6 +539,14 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
 
     const timings = Array.from(this.timingRing.subarray(0, Math.min(this.timingCount, 4096))).sort((a,b) => a-b);
     const percentile = (p: number) => timings[Math.min(timings.length - 1, Math.floor(p * timings.length))] || 0;
+    const wholePercentile = (p: number) => {
+      const target = Math.ceil(p * this.timingCount);
+      let cumulative = 0;
+      for (let i = 0; i < this.timingHistogram.length; ++i) {
+        cumulative += this.timingHistogram[i]; if (cumulative >= target) return i * 100;
+      }
+      return 102300;
+    };
     const nSamples = Math.max(1, this.samplesSinceTelemetry);
     for (let i = 0; i < SCOPE_LEN; ++i) {
       const idx = (this.scopeWrite + i) & (SCOPE_LEN - 1);
@@ -561,6 +575,11 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
         clock: typeof performance !== 'undefined' ? 'performance.now' : 'Date.now',
         observedClockStepUs: Number.isFinite(this.clockResolutionUs) ? this.clockResolutionUs : null,
         callbackCount: this.timingCount,
+        wholeRunMeanUs: this.wholeRunUs / Math.max(1, this.timingCount),
+        wholeRunMaxUs: this.wholeRunMaxUs,
+        wholeRunP95Us: wholePercentile(.95), wholeRunP99Us: wholePercentile(.99), wholeRunP999Us: wholePercentile(.999),
+        histogramBinUs: 100, histogramOverflowUs: 102300,
+        wasmMemoryBytes: M.HEAPU8.byteLength,
         processP95Us: percentile(0.95), processP99Us: percentile(0.99), processP999Us: percentile(0.999),
         timingWindow: timings.length,
         processTimeMeanUs: this.blockCountStats > 0 ? this.procUsSum / this.blockCountStats : 0.0,
