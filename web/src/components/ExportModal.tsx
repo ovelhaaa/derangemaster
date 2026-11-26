@@ -57,8 +57,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
             <input
               type="checkbox"
-              checked={matched}
-              disabled={target === 'dry'}
+              checked={matched && mode !== 'raw'}
+              disabled={target === 'dry' || mode === 'raw'}
               onChange={(e) => setMatched(e.target.checked)}
             />
             <span>Apply post-circuit Level-Match scalar gain</span>
@@ -67,7 +67,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
             <input
               type="checkbox"
-              checked={includeMon}
+              checked={includeMon && mode !== 'raw'}
+              disabled={mode === 'raw'}
 
               onChange={(e) => setIncludeMon(e.target.checked)}
             />

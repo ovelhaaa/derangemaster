@@ -184,7 +184,8 @@ export async function exportWavAndManifest(
       sampleRate,
       opts.monitorMode,
       opts.cabinetIrBuffer,
-      opts.monitorVolume
+      opts.monitorVolume,
+      mode === 'full-tail'
     );
   }
 
