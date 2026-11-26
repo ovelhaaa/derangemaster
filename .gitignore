@@ -30,3 +30,4 @@ web/public/wasm/
 web/public/worklet/
 web/test-results/
 web/playwright-report/
+artifacts/m71/browser-soak*.json
