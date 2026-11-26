@@ -36,8 +36,8 @@ export const SolverMonitor: React.FC<SolverMonitorProps> = ({
           <div className="kv-val mono">{telemetry ? `${telemetry.internalSampleRate} Hz (${config.oversampling}x)` : '--'}</div>
         </div>
         <div className="kv-card">
-          <div className="kv-label">Algorithmic Latency</div>
-          <div className="kv-val mono">{telemetry ? `${telemetry.latencySamples.toFixed(4)} samples` : '--'}</div>
+          <div className="kv-label">Core / Laboratory Latency</div>
+          <div className="kv-val mono">{telemetry ? `${telemetry.internalLatencySamples?.toFixed(4) ?? '--'} / ${telemetry.latencySamples} samples` : '--'}</div>
         </div>
         <div className="kv-card">
           <div className="kv-label">Mean / Max Iterations</div>

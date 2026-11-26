@@ -29,6 +29,7 @@ function cloneConfig(c: DspSlotConfig): DspSlotConfig {
 
 export const App: React.FC = () => {
   const engineRef = useRef<RangemasterAudioEngine | null>(null);
+  const confirmedSlots = useRef({ A: cloneConfig(NOMINAL_DEFAULT_CONFIG), B: { ...cloneConfig(NOMINAL_DEFAULT_CONFIG), engine: 'em-ac' } as DspSlotConfig });
 
   const [confirmed, setConfirmed] = useState<{ config: DspSlotConfig; slot: SlotId }>({ config: cloneConfig(NOMINAL_DEFAULT_CONFIG), slot: 'A' });
   const [reference, setReference] = useState<Float32Array | null>(null);
@@ -115,13 +116,25 @@ export const App: React.FC = () => {
         setDurationSec(samples.length / sr);
         setLoopEndSec(samples.length / sr);
       },
-      onConfigApplied: (config, slot) => { setConfirmed({ config: cloneConfig(config), slot }); },
+      onConfigApplied: (config, slot, _kind, restoreRequested) => {
+        confirmedSlots.current[slot] = cloneConfig(config);
+        setConfirmed({ config: cloneConfig(config), slot });
+        if (restoreRequested) {
+          setActiveSlot(slot);
+          const update = (prev: DspSlotConfig) => JSON.stringify(prev) === JSON.stringify(config) ? prev : cloneConfig(config);
+          if (slot === 'A') setSlotA(update); else setSlotB(update);
+        }
+      },
       onTelemetry: (t) => setTelemetry(t),
       onError: (msg) => setErrorBanner(msg),
-      onParamRejected: (reason, confirmedCfg, confirmedSlot) => {
+      onParamRejected: (reason, confirmedCfg, confirmedSlot, rejectedSlot) => {
         setErrorBanner(`DSP rejected parameter update: ${reason} (rolled back to valid state)`);
         setActiveSlot(confirmedSlot);
         setConfirmed({ config: cloneConfig(confirmedCfg), slot: confirmedSlot });
+        if (rejectedSlot && rejectedSlot !== confirmedSlot) {
+          if (rejectedSlot === 'A') setSlotA(cloneConfig(confirmedSlots.current.A));
+          else setSlotB(cloneConfig(confirmedSlots.current.B));
+        }
         if (confirmedSlot === 'A') setSlotA(cloneConfig(confirmedCfg));
         else setSlotB(cloneConfig(confirmedCfg));
       },
@@ -372,7 +385,10 @@ export const App: React.FC = () => {
         const manifest = JSON.parse(res.manifestJson);
         const ir = eng.getCabinetIrBuffer();
         manifest.monitoring_chain = { included: true, mode: monitorMode, volume: monitorVolume, convolver_normalize: false,
-          ir: { name: cabinetIrName || 'neutral unit impulse', length: ir?.length, sample_rate: ir?.sampleRate } };
+          ir: { name: cabinetIrName || 'neutral unit impulse', sha256: eng.getCabinetIrHash(), channels: ir?.numberOfChannels, length: ir?.length, sample_rate: ir?.sampleRate } };
+        manifest.output_domain = 'monitored normalized output (mono fold-down)';
+        let peak = 0; for (const x of monitored) peak = Math.max(peak, Math.abs(x));
+        manifest.peak_float32 = peak; manifest.clipping_above_full_scale = peak > 1;
         res.manifestJson = JSON.stringify(manifest, null, 2);
       }
 
@@ -557,7 +573,7 @@ export const App: React.FC = () => {
         <button className="btn" disabled={!reference} onClick={() => { engineRef.current?.setMonoBuffer(reference!, 'Local guitar capture'); setSourceMode('file'); setFileName('Local guitar capture'); setLoopStartSec(0); setLoopEndSec(reference!.length / engineRef.current!.getContext()!.sampleRate); }}>Use capture offline / loop</button>
         <button className="btn" onClick={() => { const ctx = engineRef.current?.getContext(); if (ctx) { setReference(generateTestBuffer({ type: 'di-riff', sampleRate: ctx.sampleRate, sineFreqHz: 440, sineAmpNorm: 0.5 }).samples); setCaptureStatus('Explicit synthetic DI reference'); } }}>Synthetic reference</button>
         {offlineProgress !== null && <p role="status">Offline {Math.round(offlineProgress * 100)}% <button className="btn" onClick={() => offlineAbort.current?.abort()}>Cancel processing</button></p>}
-        {audioReady && <p className="mono">Requested slot {activeSlot}; confirmed DSP slot {confirmed.slot} · {confirmed.config.engine}</p>}
+        {audioReady && <p className="mono">Requested slot {activeSlot}; confirmed DSP slot {confirmed.slot} · {confirmed.config.engine} · {telemetry?.transitionState ?? 'IDLE'}</p>}
       </section>}
       {!blindLocked && <ListeningSession context={{ levelMethod: levelMatched ? 'RMS Match' : 'Raw Level', matchGainA, matchGainB, monitorMode, monitorVolume, source: fileName, reference: captureStatus, referenceSamples: reference?.length ?? 0, sampleRate: engineRef.current?.getContext()?.sampleRate, loopStartSec, loopEndSec }} onCompare={(a, b) => {
         setSlotA(cloneConfig(a)); setSlotB(cloneConfig(b)); setActiveSlot('A');

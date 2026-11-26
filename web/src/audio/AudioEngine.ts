@@ -1,4 +1,4 @@
-import { instantiateRangemasterWasm, RangemasterWasmModule } from '../wasm/rangemasterWasm';
+import { instantiateRangemasterWasm, RangemasterWasmModule, verifyWasmBytes } from '../wasm/rangemasterWasm';
 import { DspSlotConfig, MonitorMode, SlotId, WorkletTelemetry } from '../state/types';
 import { NOMINAL_DEFAULT_CONFIG } from '../state/presets';
 import { LoadedAudioFile } from './FileSource';
@@ -6,12 +6,12 @@ import { LiveInputInfo, requestLiveInputStream } from './LiveInputSource';
 import { generateTestBuffer } from './TestSignalGenerator';
 
 export interface EngineCallbacks {
-  onConfigApplied?: (config: DspSlotConfig, slot: SlotId, kind: string) => void;
+  onConfigApplied?: (config: DspSlotConfig, slot: SlotId, kind: string, restoreRequested?: boolean) => void;
   onCapture?: (samples: Float32Array) => void;
   onReady: (sampleRate: number) => void;
   onTelemetry: (t: WorkletTelemetry) => void;
   onError: (msg: string) => void;
-  onParamRejected: (reason: string, activeConfig: DspSlotConfig, activeSlot: SlotId) => void;
+  onParamRejected: (reason: string, activeConfig: DspSlotConfig, activeSlot: SlotId, rejectedSlot?: SlotId) => void;
   onContextState: (state: AudioContextState) => void;
   onPlaybackPos: (posSec: number, playing: boolean) => void;
 }
@@ -29,6 +29,10 @@ function makeAuxAmpCurve(samples = 1024): Float32Array<ArrayBuffer> {
 export class RangemasterAudioEngine {
   private requestId = 0;
   private confirmedRequestId = 0;
+  private workletReady = false;
+  private latestWasRejected = false;
+  private requestedSlot: SlotId = 'A';
+  private startupRequest: Record<string, unknown> | null = null;
   private captureResolve: ((s: Float32Array) => void) | null = null;
   private captureReject: ((e: Error) => void) | null = null;
   private captureTimer: ReturnType<typeof setTimeout> | null = null;
@@ -64,6 +68,7 @@ export class RangemasterAudioEngine {
   private monitorMode: MonitorMode = 'direct';
   private monitorVol = 0.75;
   private cabinetIrBuffer: AudioBuffer | null = null;
+  private cabinetIrHash: string | null = null;
 
   constructor(private readonly callbacks: EngineCallbacks) {}
 
@@ -89,6 +94,7 @@ export class RangemasterAudioEngine {
       throw new Error(`Failed to fetch rangemaster_dsp.wasm (${wasmResp.status})`);
     }
     this.wasmBinary = await wasmResp.arrayBuffer();
+    await verifyWasmBytes(this.wasmBinary);
     this.offlineWasm = await instantiateRangemasterWasm(this.wasmBinary.slice(0));
 
     await this.ctx.audioWorklet.addModule(`${baseUrl}worklet/rangemaster-processor.js`);
@@ -102,7 +108,10 @@ export class RangemasterAudioEngine {
     this.workletNode.port.onmessage = (ev: MessageEvent) => {
       const msg = ev.data;
       if (msg.type === 'wasm-ready') {
+        this.workletReady = true;
+        this.callbacks.onConfigApplied?.(initialConfig, initialSlot, 'initialized');
         this.callbacks.onReady(msg.sampleRate);
+        if (this.startupRequest) { this.workletNode?.port.postMessage(this.startupRequest); this.startupRequest = null; }
       } else if (msg.type === 'wasm-error') {
         this.callbacks.onError(msg.error);
       } else if (msg.type === 'telemetry') {
@@ -113,9 +122,10 @@ export class RangemasterAudioEngine {
         this.captureResolve?.(msg.samples); this.captureResolve = null;
       } else if (msg.type === 'config-applied' && msg.requestId > this.confirmedRequestId) {
         this.confirmedRequestId = msg.requestId;
-        this.callbacks.onConfigApplied?.(msg.activeConfig, msg.activeSlot, msg.kind);
+        this.callbacks.onConfigApplied?.(msg.activeConfig, msg.activeSlot, msg.kind, msg.requestId === this.requestId || this.latestWasRejected);
       } else if (msg.type === 'param-rejected' && msg.requestId === this.requestId) {
-        this.callbacks.onParamRejected(msg.reason, msg.activeConfig, msg.activeSlot);
+        this.latestWasRejected = true;
+        this.callbacks.onParamRejected(msg.reason, msg.activeConfig, msg.activeSlot, this.requestedSlot);
       }
     };
 
@@ -223,6 +233,8 @@ export class RangemasterAudioEngine {
     return this.cabinetIrBuffer;
   }
 
+  getCabinetIrHash(): string | null { return this.cabinetIrHash; }
+
   getAnalysers(): {
     input: AnalyserNode | null;
     preMonitor: AnalyserNode | null;
@@ -236,7 +248,10 @@ export class RangemasterAudioEngine {
   }
 
   setConfig(config: DspSlotConfig, slot: SlotId, levelMatchGain = 1.0): void {
-    this.workletNode?.port.postMessage({ type: 'set-config', requestId: ++this.requestId, config, slot, levelMatchGain });
+    this.requestedSlot = slot; this.latestWasRejected = false;
+    const message = { type: 'set-config', requestId: ++this.requestId, config: structuredClone(config), slot, levelMatchGain };
+    if (this.workletReady) this.workletNode?.port.postMessage(message);
+    else this.startupRequest = message;
   }
 
   captureReference(seconds = 4): Promise<Float32Array> {
@@ -285,8 +300,10 @@ export class RangemasterAudioEngine {
   async loadCabinetIrFile(file: File): Promise<string> {
     if (!this.ctx || !this.convolver) throw new Error('Audio engine not initialized');
     const arr = await file.arrayBuffer();
+    const irHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', arr))).map(x => x.toString(16).padStart(2, '0')).join('');
     const irBuf = await this.ctx.decodeAudioData(arr);
     this.cabinetIrBuffer = irBuf;
+    this.cabinetIrHash = irHash;
     this.convolver.buffer = irBuf;
     return file.name;
   }

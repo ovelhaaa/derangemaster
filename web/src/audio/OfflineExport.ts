@@ -117,6 +117,8 @@ export async function exportWavAndManifest(
 ): Promise<{ wavBlob: Blob; manifestJson: string; filenameBase: string }> {
   const blockSize = 4096;
   const mode = opts.mode || 'raw';
+  const useMatch = mode !== 'raw' && opts.levelMatched && opts.target !== 'dry';
+  const useMonitoring = mode !== 'raw' && opts.includeMonitoring;
   const originalLength = inputSamples.length;
   const extra = mode === 'full-tail' ? Math.round(sampleRate * 2) : mode === 'latency-compensated' ? 64 : 0;
   const padded = new Float32Array(originalLength + extra);
@@ -157,7 +159,7 @@ export async function exportWavAndManifest(
       for (let i = 0; i < count; ++i) inView[i] = inputSamples[off + i];
       M._rangemaster_process_f64(h, inPtr, outPtr, count);
       for (let i = 0; i < count; ++i) {
-        rendered[off + i] = outView[i] * (opts.levelMatched ? opts.matchGain : 1.0);
+        rendered[off + i] = outView[i] * (useMatch ? opts.matchGain : 1.0);
       }
     }
 
@@ -176,7 +178,7 @@ export async function exportWavAndManifest(
   if (mode === 'latency-compensated') {
     rendered = alignedExcerpt(rendered, latencySamples, originalLength);
   }
-  if (opts.includeMonitoring) {
+  if (useMonitoring) {
     rendered = await applyMonitoringOffline(
       rendered,
       sampleRate,
@@ -191,11 +193,13 @@ export async function exportWavAndManifest(
 
   const manifest = {
     product: 'DERangeMaster — Germanium Circuit Lab',
-    core_version: 'M7.1 (M7 physical core)',
+    core_version: BUILD_INFO.core_version,
+    integration_milestone: BUILD_INFO.milestone,
     build: BUILD_INFO,
     config_abi_version: M._rangemaster_get_config_abi_version(),
     input_sha256: inputHash,
     export_mode: mode,
+    output_domain: useMonitoring ? 'monitored normalized output' : opts.target === 'dry' ? 'digital input (FS)' : 'normalized circuit output (volts / outputRefVolts * outputTrimGain)',
     tail_seconds: mode === 'full-tail' ? 2 : 0,
     solver_profile: 'Reference',
     laboratory_latency_samples: LAB_LATENCY,
@@ -206,15 +210,15 @@ export async function exportWavAndManifest(
     oversampling_factor: opts.target === 'dry' ? 1 : opts.slotConfig.oversampling,
     latency_samples: latencySamples,
     level_matching: {
-      enabled: opts.levelMatched,
-      post_circuit_scalar_gain: opts.levelMatched ? opts.matchGain : 1.0,
-      procedure: opts.levelMatched
+      enabled: useMatch,
+      post_circuit_scalar_gain: useMatch ? opts.matchGain : 1.0,
+      procedure: useMatch
         ? 'Post-circuit static RMS scalar match preserving circuit nonlinearity (no dynamic compression/limiting)'
         : 'Raw calibrated output',
     },
     monitoring_chain: {
-      included: opts.includeMonitoring,
-      mode: opts.includeMonitoring ? opts.monitorMode : 'direct',
+      included: useMonitoring,
+      mode: useMonitoring ? opts.monitorMode : 'direct',
       monitor_volume: opts.monitorVolume, convolver_normalize: false,
       ir: opts.cabinetIrBuffer ? { sample_rate: opts.cabinetIrBuffer.sampleRate, length: opts.cabinetIrBuffer.length } : null,
     },

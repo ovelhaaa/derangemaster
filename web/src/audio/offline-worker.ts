@@ -1,4 +1,4 @@
-import { instantiateRangemasterWasm } from '../wasm/rangemasterWasm';
+import { instantiateRangemasterWasm, verifyWasmBytes } from '../wasm/rangemasterWasm';
 import { computeFileLevelMatchGains } from './LevelMatch';
 import { encodeFloat32Wav, exportWavAndManifest } from './OfflineExport';
 
@@ -11,7 +11,9 @@ self.onmessage = async e => {
     }
     const response = await fetch(e.data.wasmUrl);
     if (!response.ok) throw new Error(`WASM fetch failed: ${response.status}`);
-    const M = await instantiateRangemasterWasm(await response.arrayBuffer());
+    const binary = await response.arrayBuffer();
+    await verifyWasmBytes(binary);
+    const M = await instantiateRangemasterWasm(binary);
     self.postMessage({ progress: 0.1 });
     const result = job === 'match'
       ? computeFileLevelMatchGains(M, p.samples, p.sampleRate, p.slotA, p.slotB)

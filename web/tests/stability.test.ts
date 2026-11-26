@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from 'vitest';
 import fs from 'node:fs';
-import { applyFullConfigToHandle, CONFIG_OFFSETS, instantiateRangemasterWasm, writeConfig } from '../src/wasm/rangemasterWasm';
+import { applyFullConfigToHandle, CONFIG_OFFSETS, instantiateRangemasterWasm, writeConfig, verifyWasmBytes } from '../src/wasm/rangemasterWasm';
 import { NOMINAL_DEFAULT_CONFIG } from '../src/state/presets';
 import { computeFileLevelMatchGains, renderWasmSlice } from '../src/audio/LevelMatch';
 import { encodeFloat32Wav, exportWavAndManifest } from '../src/audio/OfflineExport';
@@ -30,6 +30,10 @@ function block(p: any, phase: number, kind = 'sine') {
   p.process([[input]], [[out]]); expect(Array.from(out).every(Number.isFinite)).toBe(true); return out;
 }
 describe('C ABI on real WASM', () => {
+  test('runtime integrity rejects stale or corrupted WASM', async () => {
+    await expect(verifyWasmBytes(new Uint8Array(wasm).buffer)).resolves.toBeUndefined();
+    await expect(verifyWasmBytes(new ArrayBuffer(80))).rejects.toThrow(/hash mismatch/);
+  });
   test('binary layout, rollback and rebuild count', () => {
     expect(CONFIG_OFFSETS).toEqual([0,4,8,12,16,20,24,32,40,48,56,64,72,80,88,96,100]);
     expect(M._rangemaster_get_config_struct_size()).toBe(104);

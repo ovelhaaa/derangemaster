@@ -22,7 +22,9 @@ if (pair.js !== digest(jsPath) || pair.wasm !== digest(wasmPath)) throw new Erro
 const webSources = execFileSync('git', ['ls-files', 'src', 'scripts', 'vite.config.ts', 'package.json', 'package-lock.json'], { cwd: webRoot, encoding: 'utf8' }).trim().split(/\r?\n/).filter(p => !p.includes('rangemaster_dsp.js'));
 const webHash = createHash('sha256');
 for (const file of webSources.sort()) if (fs.existsSync(path.join(webRoot,file))) webHash.update(file).update(fs.readFileSync(path.join(webRoot,file), 'utf8').replace(/\r\n/g, '\n'));
-const build = { web_source_sha256: webHash.digest('hex'), emscripten: pair.emscripten,  commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+const coreVersion = fs.readFileSync(path.join(webRoot, '..', 'CMakeLists.txt'), 'utf8').match(/project\(rangemaster_dsp VERSION ([0-9.]+)/)?.[1];
+if (!coreVersion) throw new Error('Missing CMake core version');
+const build = { core_version: coreVersion, milestone: 'M7.1', web_source_sha256: webHash.digest('hex'), emscripten: pair.emscripten, commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
   dirty: !!execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8' }).trim(),
   source_sha256: sourceHash, wasm_sha256: createHash('sha256').update(fs.readFileSync(wasmPath)).digest('hex'), abi: 1 };
 fs.writeFileSync(path.join(generated, 'build-info.ts'), `export const BUILD_INFO = ${JSON.stringify(build)} as const;\n`);

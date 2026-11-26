@@ -566,7 +566,7 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
         matrixRebuildCount: M._rangemaster_get_matrix_rebuild_count(this.hActive),
         activeSlot: this.activeSlot,
         bypassed: this.bypassed,
-        switching: this.xfadeActive,
+        switching: this.state !== 'IDLE' && this.state !== 'REJECTED',
         inPeak: this.blockPeakIn,
         inRms: Math.sqrt(this.blockSqIn / nSamples),
         outPeak: this.blockPeakOut,

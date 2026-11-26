@@ -1,4 +1,5 @@
 import createRangemasterModule from './rangemaster_dsp.js';
+import { BUILD_INFO } from './build-info';
 import {
   ablationToMask,
   ConditioningInfo,
@@ -68,6 +69,12 @@ export async function instantiateRangemasterWasm(wasmBinary?: ArrayBuffer): Prom
   }
   const mod = await (createRangemasterModule as unknown as (o: Record<string, unknown>) => Promise<RangemasterWasmModule>)(opts);
   return mod;
+}
+
+export async function verifyWasmBytes(binary: ArrayBuffer): Promise<void> {
+  const digest = await crypto.subtle.digest('SHA-256', binary);
+  const hash = Array.from(new Uint8Array(digest)).map(x => x.toString(16).padStart(2, '0')).join('');
+  if (hash !== BUILD_INFO.wasm_sha256) throw new Error('WASM build hash mismatch: refresh/rebuild the complete application');
 }
 
 export function applyFullConfigToHandle(

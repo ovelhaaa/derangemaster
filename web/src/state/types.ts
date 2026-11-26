@@ -80,6 +80,8 @@ export interface ConditioningInfo {
 }
 
 export interface WorkletTelemetry {
+  transitionState?: string;
+  internalLatencySamples?: number;
   sampleRate: number;
   internalSampleRate: number;
   latencySamples: number;
