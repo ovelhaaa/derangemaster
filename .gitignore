@@ -3,6 +3,8 @@ build/
 build-wasm/
 cmake-build-*/
 .vs/
+web/node_modules/
+web/dist/
 
 # Python caches
 __pycache__/
