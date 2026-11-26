@@ -120,7 +120,7 @@ export async function exportWavAndManifest(
   const useMatch = mode !== 'raw' && opts.levelMatched && opts.target !== 'dry';
   const useMonitoring = mode !== 'raw' && opts.includeMonitoring;
   const originalLength = inputSamples.length;
-  const extra = mode === 'full-tail' ? Math.round(sampleRate * 2) : mode === 'latency-compensated' ? 64 : 0;
+  const extra = mode === 'full-tail' ? Math.round(sampleRate * 2) : mode === 'latency-compensated' ? 128 : 0;
   const padded = new Float32Array(originalLength + extra);
   padded.set(inputSamples);
   const inputHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new Float32Array(inputSamples).buffer))).map(x => x.toString(16).padStart(2, '0')).join('');

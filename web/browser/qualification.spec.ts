@@ -3,7 +3,7 @@ import fs from 'node:fs';
 test('browser audio, worker and listening smoke', async ({ page }) => {
   test.setTimeout(90000);
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: /Start Audio Engine/i }).click();
   await expect(page.getByRole('button', { name: /Suspend|Pause Audio/i }).first()).toBeVisible({ timeout: 30000 });
   await page.getByRole('button', { name: /Listening Session/ }).click();

@@ -58,7 +58,7 @@ export function computeFileLevelMatchGains(
 ): { gainA: number; gainB: number; rmsDry: number; rmsA: number; rmsB: number } {
   if (excerpt.length < sampleRate) throw new Error('Reference must contain at least one second');
   // Same input interval for all paths; extend processing so the delayed ending is retained.
-  const tail = 64;
+  const tail = 128; // maximum core latency plus full fractional FIR support
   const padded = new Float32Array(excerpt.length + tail);
   padded.set(excerpt);
   const outA = renderWasmSlice(M, padded, sampleRate, slotA);
