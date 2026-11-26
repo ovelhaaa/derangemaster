@@ -553,7 +553,7 @@ export const App: React.FC = () => {
             setReference(samples); setCaptureStatus(`Captured 4 s${peak >= 0.999 ? ' · INPUT CLIPPING' : ''}`);
           } catch (e) { setCaptureStatus(String(e)); }
         }}>Capture Reference</button>
-        <button className="btn" onClick={() => { setReference(null); setCaptureStatus('No captured reference'); }}>Discard capture</button>
+        <button className="btn" onClick={() => { engineRef.current?.cancelCapture(); setReference(null); setCaptureStatus('No captured reference'); }}>Discard capture</button>
         <button className="btn" disabled={!reference} onClick={() => { engineRef.current?.setMonoBuffer(reference!, 'Local guitar capture'); setSourceMode('file'); setFileName('Local guitar capture'); setLoopStartSec(0); setLoopEndSec(reference!.length / engineRef.current!.getContext()!.sampleRate); }}>Use capture offline / loop</button>
         <button className="btn" onClick={() => { const ctx = engineRef.current?.getContext(); if (ctx) { setReference(generateTestBuffer({ type: 'di-riff', sampleRate: ctx.sampleRate, sineFreqHz: 440, sineAmpNorm: 0.5 }).samples); setCaptureStatus('Explicit synthetic DI reference'); } }}>Synthetic reference</button>
         {offlineProgress !== null && <p role="status">Offline {Math.round(offlineProgress * 100)}% <button className="btn" onClick={() => offlineAbort.current?.abort()}>Cancel processing</button></p>}

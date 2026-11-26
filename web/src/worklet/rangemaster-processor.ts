@@ -63,7 +63,7 @@ function isCategoryAOnly(a: DspSlotConfig, b: DspSlotConfig): boolean {
 class RangemasterWorkletProcessor extends AudioWorkletProcessor {
   private M: RangemasterWasmModule | null = null;
   private ready = false;
-  private capture = new Float32Array(48000 * 10);
+  private capture = new Float32Array(Math.round(sampleRate * 5));
   private captureLength = 0;
   private capturePosition = 0;
 
@@ -167,7 +167,9 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
     if (!this.ready || !this.M) {
       return;
     }
-    if (type === 'capture-reference') {
+    if (type === 'cancel-capture') {
+      this.captureLength = 0; this.capturePosition = 0;
+    } else if (type === 'capture-reference') {
       this.captureLength = Math.min(this.capture.length, Math.round(sampleRate * Math.max(3, Math.min(5, Number(msg.seconds) || 4))));
       this.capturePosition = 0;
     } else if (type === 'set-config') {

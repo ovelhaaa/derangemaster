@@ -30,6 +30,8 @@ export class RangemasterAudioEngine {
   private requestId = 0;
   private confirmedRequestId = 0;
   private captureResolve: ((s: Float32Array) => void) | null = null;
+  private captureReject: ((e: Error) => void) | null = null;
+  private captureTimer: ReturnType<typeof setTimeout> | null = null;
   private ctx: AudioContext | null = null;
   private wasmBinary: ArrayBuffer | null = null;
   private offlineWasm: RangemasterWasmModule | null = null;
@@ -106,6 +108,8 @@ export class RangemasterAudioEngine {
       } else if (msg.type === 'telemetry') {
         this.callbacks.onTelemetry(msg.telemetry as WorkletTelemetry);
       } else if (msg.type === 'capture-complete') {
+        if (this.captureTimer) clearTimeout(this.captureTimer);
+        this.captureTimer = null; this.captureReject = null;
         this.captureResolve?.(msg.samples); this.captureResolve = null;
       } else if (msg.type === 'config-applied' && msg.requestId > this.confirmedRequestId) {
         this.confirmedRequestId = msg.requestId;
@@ -238,10 +242,20 @@ export class RangemasterAudioEngine {
   captureReference(seconds = 4): Promise<Float32Array> {
     if (!this.workletNode || this.ctx?.state !== 'running') return Promise.reject(new Error('Start audio before capture'));
     if (this.captureResolve) return Promise.reject(new Error('Capture already in progress'));
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
       this.captureResolve = resolve;
+      this.captureReject = reject;
+      this.captureTimer = setTimeout(() => this.cancelCapture(), 15000);
       this.workletNode!.port.postMessage({ type: 'capture-reference', seconds });
     });
+  }
+
+  cancelCapture(): void {
+    this.workletNode?.port.postMessage({ type: 'cancel-capture' });
+    if (this.captureTimer) clearTimeout(this.captureTimer);
+    this.captureTimer = null;
+    this.captureReject?.(new Error('Capture cancelled or audio context suspended'));
+    this.captureResolve = null; this.captureReject = null;
   }
 
   setBypass(bypassed: boolean): void {
@@ -457,6 +471,7 @@ export class RangemasterAudioEngine {
   }
 
   dispose(): void {
+    this.cancelCapture();
     this.stop();
     this.disableLiveInput();
     this.workletNode?.disconnect();
