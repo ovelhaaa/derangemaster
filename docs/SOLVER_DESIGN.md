@@ -44,10 +44,10 @@ For $k = 0, \dots, \text{maxIterations}-1$:
 3. Compute step $\Delta v = -J_g^{-1} g$ where $J_g = F_N \frac{\partial f}{\partial v_n} - I_2$:
    - **Ill-conditioning guard**: if $|\det(J_g)| < 10^{-15} (\|J_g\|_F^2 + 1)$ or non-finite, apply Tikhonov/Levenberg-Marquardt damping $J_{\text{reg}} = J_g - \lambda I_2$ ($\lambda = 10^{-6}$, escalating if needed) so the step remains a descent direction.
 4. **Step-size limiting** (motivated by [Holmes & van Walstijn 2015]): clamp each component of $\Delta v$ so $\max(|\Delta v_0|, |\Delta v_1|) \le \Delta V_{\max} = 0.25\,\text{V}$ (preserving step direction by uniform scaling: if $\|\Delta v\|_\infty > \Delta V_{\max}$, $\Delta v \leftarrow \Delta v \cdot (\Delta V_{\max} / \|\Delta v\|_\infty)$).
-5. **Domain-guarded Armijo backtracking line search**:
+5. **Domain-guarded Affine-Invariant (Deuflhard) + Residual Backtracking Line Search**:
    - Trial step $v_{\text{try}} = v_n^{(k)} + \alpha_{\text{ls}} \Delta v$ starting at $\alpha_{\text{ls}} = 1.0$, halving $\alpha_{\text{ls}} \leftarrow 0.5 \alpha_{\text{ls}}$ up to `maxBacktrackSteps = 12`.
    - Reject trial immediately if `!eval.valid` (e.g., Gummel-Poon $1 - V_{eb}/V_{ar} - V_{cb}/V_{af} \le 10^{-6}$, $1 + 4 q_2 \le 10^{-12}$, or non-finite).
-   - Accept as soon as $\|g_{\text{try}}\|_2 \le (1 - 10^{-4} \alpha_{\text{ls}}) \|g\|_2$ (or strict decrease $\|g_{\text{try}}\|_2 < \|g\|_2$).
+   - Accept if either the residual norm decreases ($\|g_{\text{try}}\|_2 \le (1 - 10^{-4}\alpha_{\text{ls}})\|g\|_2$) **or** Deuflhard's affine-invariant natural monotonicity criterion holds ($\|J_k^{-1} g_{\text{try}}\|_2 \le (1 - c\alpha_{\text{ls}})\|\Delta v\|_2$ with bounded residual ratio), preventing step-stalling when crossing from flat active/cutoff regions into steep exponential saturation knees.
 6. **Convergence test** (both residual and step tolerance):
    $$\|g_{\text{try}}\|_\infty \le \varepsilon_{\text{abs}} + \varepsilon_{\text{rel}} \|v_n\|_\infty \quad \text{AND} \quad \|\alpha_{\text{ls}} \Delta v\|_\infty \le \varepsilon_{\text{step}}$$
    with defaults $\varepsilon_{\text{abs}} = 10^{-11}\,\text{V}$, $\varepsilon_{\text{rel}} = 10^{-11}$, $\varepsilon_{\text{step}} = 10^{-11}\,\text{V}$.

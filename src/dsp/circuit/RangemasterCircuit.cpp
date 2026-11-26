@@ -1,5 +1,6 @@
 #include "dsp/circuit/RangemasterCircuit.h"
 #include "dsp/components/EbersMoll.h"
+#include "dsp/components/GummelPoon.h"
 
 #include <cmath>
 
@@ -12,12 +13,22 @@ BjtEvaluation evalEmThunk(double veb, double vcb, const void* ctx) noexcept {
     return evaluateEbersMoll(veb, vcb, *p);
 }
 
+BjtEvaluation evalGpThunk(double veb, double vcb, const void* ctx) noexcept {
+    const auto* p = static_cast<const GummelPoonParams*>(ctx);
+    return evaluateGummelPoon(veb, vcb, *p);
+}
+
 } // namespace
 
 BjtEvalFn RangemasterCircuit::selectEvalFn(const void*& ctx) const noexcept {
     if (params_.engine == EngineType::PublishedCalibratedOC44) {
         ctx = &publishedCalibratedSet().bjt;
         return &evalEmThunk;
+    }
+    if (params_.engine == EngineType::GummelPoonDC ||
+        params_.engine == EngineType::GummelPoonAC) {
+        ctx = &profile_->gummelPoon;
+        return &evalGpThunk;
     }
     ctx = &profile_->ebersMoll;
     return &evalEmThunk;

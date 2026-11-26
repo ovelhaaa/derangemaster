@@ -141,15 +141,16 @@ SolverResult NewtonSolver::solveSinglePass(const std::array<double, 2>& p,
             return res;
         }
 
-        // Direction-preserving step cap
         const double stepInf = infNorm2(step[0], step[1]);
+        const double fullStepL2 = l2Norm2(step[0], step[1]);
         if (stepInf > config_.maxStepVolts && stepInf > 0.0) {
             const double scale = config_.maxStepVolts / stepInf;
             step[0] *= scale;
             step[1] *= scale;
         }
+        const double cappedStepL2 = l2Norm2(step[0], step[1]);
 
-        // Domain-guarded Armijo backtracking line search
+        // Domain-guarded affine-invariant (Deuflhard) + residual-norm backtracking line search
         double damp = 1.0;
         bool accepted = false;
         std::array<double, 2> bestVn = res.vn;
@@ -174,7 +175,19 @@ SolverResult NewtonSolver::solveSinglePass(const std::array<double, 2>& p,
                     const double gTryL2 = l2Norm2(gTry[0], gTry[1]);
                     const double gTryInf = infNorm2(gTry[0], gTry[1]);
                     const double armijoTarget = (1.0 - 1e-4 * damp) * gL2;
-                    if (gTryL2 <= armijoTarget || gTryL2 < gL2) {
+
+                    // Deuflhard natural monotonicity test: ||J_k^{-1} g(v_try)||_2 <= (1 - 0.5*damp) ||step||_2
+                    double simpStep[2]{0.0, 0.0};
+                    const double negGTry[2]{-gTry[0], -gTry[1]};
+                    bool naturalOk = false;
+                    if (solve2x2(J, negGTry, simpStep)) {
+                        const double simpL2 = l2Norm2(simpStep[0], simpStep[1]);
+                        const double refStep = (damp < 1.0 || stepInf <= config_.maxStepVolts) ? cappedStepL2 : fullStepL2;
+                        naturalOk = (simpL2 <= (1.0 - 0.5 * damp * (stepInf <= config_.maxStepVolts ? 1.0 : 0.25)) * refStep) &&
+                                    (gTryInf < 1e4 * std::max(1.0, gInf));
+                    }
+
+                    if (gTryL2 <= armijoTarget || gTryL2 < gL2 || naturalOk) {
                         bestVn = vnTry;
                         bestEval = evTry;
                         bestG[0] = gTry[0];

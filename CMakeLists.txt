@@ -12,6 +12,7 @@ option(RANGEMASTER_BUILD_WASM "Build WebAssembly module via Emscripten" OFF)
 set(RANGEMASTER_CORE_SOURCES
     src/dsp/components/TransistorProfiles.cpp
     src/dsp/components/EbersMoll.cpp
+    src/dsp/components/GummelPoon.cpp
     src/dsp/solver/NewtonSolver.cpp
     src/dsp/circuit/CircuitMatrices.cpp
     src/dsp/circuit/RangemasterCircuit.cpp
@@ -47,4 +48,12 @@ if(RANGEMASTER_BUILD_TESTS AND NOT RANGEMASTER_BUILD_WASM)
     add_executable(test_ac_ebers_moll tests/circuit/test_ac_ebers_moll.cpp)
     target_link_libraries(test_ac_ebers_moll PRIVATE rangemaster_core)
     add_test(NAME circuit.ac_ebers_moll COMMAND test_ac_ebers_moll)
+
+    add_executable(test_gummel_poon tests/unit/test_gummel_poon.cpp)
+    target_link_libraries(test_gummel_poon PRIVATE rangemaster_core)
+    add_test(NAME unit.gummel_poon COMMAND test_gummel_poon)
+
+    add_executable(test_all_engines_profiles tests/circuit/test_all_engines_profiles.cpp)
+    target_link_libraries(test_all_engines_profiles PRIVATE rangemaster_core)
+    add_test(NAME circuit.all_engines_profiles COMMAND test_all_engines_profiles)
 endif()
