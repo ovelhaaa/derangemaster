@@ -42,4 +42,8 @@ jobs:
         run: |
           cd web
           npx playwright install --with-deps chromium firefox
+          sudo apt-get install -y pulseaudio
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=derangemaster rate=48000
+          pactl set-default-sink derangemaster
           npm run test:browser

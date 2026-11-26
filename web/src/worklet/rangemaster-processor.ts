@@ -184,6 +184,12 @@ class RangemasterWorkletProcessor extends AudioWorkletProcessor {
       const id = Number(msg.requestId);
       if (!Number.isSafeInteger(id) || id <= this.requestId) return;
       this.requestId = id;
+      // The validation-only handle is unprepared (48 kHz default); include the
+      // actual browser rate before allowing a request to replace pending work.
+      if (sampleRate * cfg.oversampling > 2000000) {
+        this.rejectUpdate('oversampling exceeds the core internal sample-rate limit at this browser rate', id);
+        return;
+      }
       const checked = applyFullConfigToHandle(this.M, this.validationHandle, cfg);
       if (!checked.ok || !Number.isFinite(matchGain) || matchGain < 0.01 || matchGain > 100) {
         this.rejectUpdate(checked.error || 'Invalid match gain', id);

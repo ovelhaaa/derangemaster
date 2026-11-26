@@ -53,6 +53,29 @@ test('offline Worker WAV export and manifest', async ({ page }) => {
   expect(result.manifest.config_abi_version).toBe(1);
 });
 
+test('startup requests are retained and initialized configuration is confirmed', async ({ page }) => {
+  test.setTimeout(30000);
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    // @ts-ignore Vite qualification module
+    const { RangemasterAudioEngine } = await import('/src/audio/AudioEngine.ts');
+    // @ts-ignore
+    const { NOMINAL_DEFAULT_CONFIG } = await import('/src/state/presets.ts');
+    const applied: unknown[] = [];
+    let finish: (value: unknown) => void = () => {};
+    const done = new Promise(resolve => { finish = resolve; });
+    const engine = new RangemasterAudioEngine({ onReady() {}, onTelemetry() {}, onError(e: string) { finish({error:e}); }, onParamRejected(e: string) { finish({error:e}); }, onContextState() {}, onPlaybackPos() {}, onConfigApplied(config: unknown, slot: string, kind: string) { applied.push({config,slot,kind}); if(slot==='B') finish(applied); } });
+    engine.setConfig({ ...structuredClone(NOMINAL_DEFAULT_CONFIG), engine:'em-ac', oversampling:1 }, 'B');
+    await engine.init({ ...structuredClone(NOMINAL_DEFAULT_CONFIG), inputVolts:.6 }, 'A');
+    const result = await Promise.race([done, new Promise(resolve => setTimeout(() => resolve('timeout'), 10000))]);
+    engine.dispose(); return result;
+  });
+  expect(Array.isArray(result)).toBe(true);
+  const applied = result as any[];
+  expect(applied[0].config.inputVolts).toBe(.6);
+  expect(applied.at(-1).slot).toBe('B');
+});
+
 test('ten minute real AudioWorklet qualification', async ({ page }, info) => {
   test.skip(!process.env.RUN_SOAK || info.project.name !== 'chromium', 'RUN_SOAK=1 enables ten minute Chromium run');
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
