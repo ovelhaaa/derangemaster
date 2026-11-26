@@ -34,10 +34,11 @@ jobs:
         run: |
           emcmake cmake -B build-wasm -DRANGEMASTER_BUILD_WASM=ON -DCMAKE_BUILD_TYPE=Release
           cmake --build build-wasm -j4
+          emcc --version > build-wasm/emscripten-version.txt
           mkdir -p web/src/wasm web/public/wasm
           cp build-wasm/rangemaster_dsp.js web/src/wasm/rangemaster_dsp.js
-          cp build-wasm/rangemaster_dsp.wasm web/src/wasm/rangemaster_dsp.wasm
           cp build-wasm/rangemaster_dsp.wasm web/public/wasm/rangemaster_dsp.wasm
+          node web/scripts/stamp-wasm.mjs
       - name: Build Production Bundle for GitHub Pages
         run: |
           RAW_BASE="${{ steps.pages.outputs.base_path }}"
