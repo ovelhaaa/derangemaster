@@ -5,6 +5,26 @@
 #include <cmath>
 #include <new>
 
+static_assert(sizeof(RangemasterConfigC) == 104);
+static_assert(alignof(RangemasterConfigC) == 8);
+static_assert(offsetof(RangemasterConfigC, abiVersion) == 0);
+static_assert(offsetof(RangemasterConfigC, structSize) == 4);
+static_assert(offsetof(RangemasterConfigC, engine) == 8);
+static_assert(offsetof(RangemasterConfigC, transistor) == 12);
+static_assert(offsetof(RangemasterConfigC, oversampling) == 16);
+static_assert(offsetof(RangemasterConfigC, gpAblationMask) == 20);
+static_assert(offsetof(RangemasterConfigC, boost) == 24);
+static_assert(offsetof(RangemasterConfigC, rangeNf) == 32);
+static_assert(offsetof(RangemasterConfigC, inputVolts) == 40);
+static_assert(offsetof(RangemasterConfigC, outputRefVolts) == 48);
+static_assert(offsetof(RangemasterConfigC, outputTrimDb) == 56);
+static_assert(offsetof(RangemasterConfigC, biasTrim) == 64);
+static_assert(offsetof(RangemasterConfigC, supplyVolts) == 72);
+static_assert(offsetof(RangemasterConfigC, sourceOhms) == 80);
+static_assert(offsetof(RangemasterConfigC, loadOhms) == 88);
+static_assert(offsetof(RangemasterConfigC, potTaper) == 96);
+static_assert(offsetof(RangemasterConfigC, boostLinearApprox) == 100);
+
 struct RangemasterHandle {
     rangemaster::RangemasterEngine engine;
     rangemaster::ParameterState params;
@@ -35,6 +55,70 @@ int32_t applyCandidateUpdate(RangemasterHandle* handle,
 } // namespace
 
 extern "C" {
+
+uint32_t rangemaster_get_config_abi_version(void) { return 1; }
+uint32_t rangemaster_get_config_struct_size(void) { return sizeof(RangemasterConfigC); }
+int32_t rangemaster_apply_config(RangemasterHandle* h, const RangemasterConfigC* c) {
+    if (!h || !c) return -1;
+    if (c->abiVersion != 1 || c->structSize != sizeof(*c)) return -2;
+    using namespace rangemaster;
+    using L = ParameterLimits;
+    if (!(c->engine >= 0 && c->engine <= 4)) return -102;
+    if (!(c->transistor >= 0 && c->transistor < static_cast<int>(transistorProfileCount()))) return -103;
+    if (!(isValidOversamplingFactor(static_cast<OversamplingFactor>(c->oversampling)))) return -104;
+    if (!(c->gpAblationMask <= 31)) return -105;
+    if (!(inRangeFinite(c->boost, L::kMinBoost, L::kMaxBoost))) return -106;
+    if (!(inRangeFinite(c->rangeNf * 1e-9, L::kMinCouplingCapF, L::kMaxCouplingCapF))) return -107;
+    if (!(inRangeFinite(c->inputVolts, L::kMinInputVolts, L::kMaxInputVolts))) return -108;
+    if (!(inRangeFinite(c->outputRefVolts, L::kMinOutputRefVolts, L::kMaxOutputRefVolts))) return -109;
+    if (!(inRangeFinite(c->outputTrimDb, L::kMinOutputTrimDb, L::kMaxOutputTrimDb))) return -110;
+    if (!(inRangeFinite(c->biasTrim, L::kMinBiasTrim, L::kMaxBiasTrim))) return -111;
+    if (!(inRangeFinite(c->supplyVolts, L::kMinSupplyVolts, L::kMaxSupplyVolts))) return -112;
+    if (!(inRangeFinite(c->sourceOhms, L::kMinRinOhms, L::kMaxRinOhms))) return -113;
+    if (!(inRangeFinite(c->loadOhms, L::kMinResistorOhms, L::kMaxResistorOhms))) return -114;
+    if (!(c->potTaper >= 0 && c->potTaper <= 2)) return -115;
+    if (!(c->boostLinearApprox == 0 || c->boostLinearApprox == 1)) return -116;
+    auto p = h->params;
+    p.circuit.engine = static_cast<EngineType>(c->engine);
+    p.circuit.transistor = static_cast<TransistorId>(c->transistor);
+    p.oversampling = static_cast<OversamplingFactor>(c->oversampling);
+    p.circuit.gpAblation = GummelPoonAblationFlags::fromMask(c->gpAblationMask);
+    p.circuit.boost = c->boost;
+    const double rangeF = c->rangeNf * 1e-9;
+    // Unit round-trip (F -> nF -> F) must not turn a digital update physical.
+    if (std::abs(rangeF - p.circuit.C1) > 1e-15 * p.circuit.C1) p.circuit.C1 = rangeF;
+    p.inputVolts = c->inputVolts;
+    p.outputRefVolts = c->outputRefVolts;
+    p.outputTrimDb = c->outputTrimDb;
+    p.circuit.biasTrim = c->biasTrim;
+    p.circuit.Vcc = c->supplyVolts;
+    p.circuit.Rin = c->sourceOhms;
+    p.circuit.R4 = c->loadOhms;
+    p.circuit.potTaper = static_cast<PotTaper>(c->potTaper);
+    p.circuit.boostLinearApprox = c->boostLinearApprox != 0;
+    return applyCandidateUpdate(h, p) ? 1 : -3;
+}
+int32_t rangemaster_get_config(const RangemasterHandle* h, RangemasterConfigC* c) {
+    if (!h || !c) return -1;
+    if (c->abiVersion != 1 || c->structSize != sizeof(*c)) return -2;
+    const auto& p = h->params;
+    c->engine = static_cast<int32_t>(p.circuit.engine);
+    c->transistor = static_cast<int32_t>(p.circuit.transistor);
+    c->oversampling = static_cast<int32_t>(p.oversampling);
+    c->gpAblationMask = p.circuit.gpAblation.toMask();
+    c->boost = p.circuit.boost;
+    c->rangeNf = p.circuit.C1 * 1e9;
+    c->inputVolts = p.inputVolts;
+    c->outputRefVolts = p.outputRefVolts;
+    c->outputTrimDb = p.outputTrimDb;
+    c->biasTrim = p.circuit.biasTrim;
+    c->supplyVolts = p.circuit.Vcc;
+    c->sourceOhms = p.circuit.Rin;
+    c->loadOhms = p.circuit.R4;
+    c->potTaper = static_cast<int32_t>(p.circuit.potTaper);
+    c->boostLinearApprox = static_cast<int32_t>(p.circuit.boostLinearApprox);
+    return 1;
+}
 
 RangemasterHandle* rangemaster_create(void) {
     auto* h = new (std::nothrow) RangemasterHandle();

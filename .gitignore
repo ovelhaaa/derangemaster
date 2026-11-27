@@ -20,3 +20,14 @@ artifacts/plots/*.png
 .DS_Store
 Thumbs.db
 *.user
+
+# WASM and worklet are derived exclusively from C++ + TypeScript sources
+web/src/wasm/rangemaster_dsp.js
+web/src/wasm/build-info.ts
+web/src/wasm/source.sha256
+web/src/wasm/artifact-hashes.json
+web/public/wasm/
+web/public/worklet/
+web/test-results/
+web/playwright-report/
+artifacts/m71/browser-soak*.json

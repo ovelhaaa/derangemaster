@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BlindSessionEntry, DspSlotConfig, SlotId } from '../state/types';
 
 interface BlindComparisonPanelProps {
+  busy: boolean;
+  levelMethod: string;
   open: boolean;
   slotA: DspSlotConfig;
   slotB: DspSlotConfig;
@@ -12,6 +14,8 @@ interface BlindComparisonPanelProps {
 }
 
 export const BlindComparisonPanel: React.FC<BlindComparisonPanelProps> = ({
+  busy,
+  levelMethod,
   open,
   slotA,
   slotB,
@@ -27,10 +31,14 @@ export const BlindComparisonPanel: React.FC<BlindComparisonPanelProps> = ({
   const [notes, setNotes] = useState('');
   const [log, setLog] = useState<BlindSessionEntry[]>([]);
 
+  useEffect(() => { if (open) { onSelectActualSlot(xIsA ? 'A' : 'B'); setOrder(['X']); } }, [open]);
+  useEffect(() => { onLockChange(open && !revealed); }, [open, revealed, onLockChange]);
+  const [order, setOrder] = useState<Array<'X' | 'Y'>>([]);
   if (!open) return null;
 
   const chooseBlind = (choice: 'X' | 'Y') => {
     setActiveBlind(choice);
+    setOrder(prev => [...prev, choice]);
     const target: SlotId = choice === 'X' ? (xIsA ? 'A' : 'B') : (xIsA ? 'B' : 'A');
     onSelectActualSlot(target);
     onLockChange(true);
@@ -42,18 +50,10 @@ export const BlindComparisonPanel: React.FC<BlindComparisonPanelProps> = ({
       preferred: pref,
       revealedX: xIsA ? 'A' : 'B',
       revealedY: xIsA ? 'B' : 'A',
-      slotAConfig: {
-        engine: slotA.engine,
-        transistorId: slotA.transistorId,
-        oversampling: slotA.oversampling,
-        rangeNf: slotA.rangeNf,
-      },
-      slotBConfig: {
-        engine: slotB.engine,
-        transistorId: slotB.transistorId,
-        oversampling: slotB.oversampling,
-        rangeNf: slotB.rangeNf,
-      },
+      slotAConfig: structuredClone(slotA),
+      slotBConfig: structuredClone(slotB),
+      presentationOrder: order,
+      levelMethod,
       notes,
       timestampIso: new Date().toISOString(),
     };
@@ -67,7 +67,7 @@ export const BlindComparisonPanel: React.FC<BlindComparisonPanelProps> = ({
     setXIsA(nextXIsA);
     setTrial((t) => t + 1);
     setRevealed(false);
-    setNotes('');
+    setNotes(''); setOrder(['X']);
     setActiveBlind('X');
     onSelectActualSlot(nextXIsA ? 'A' : 'B');
     onLockChange(true);
@@ -92,7 +92,7 @@ export const BlindComparisonPanel: React.FC<BlindComparisonPanelProps> = ({
           Blind A/B Listening Trial #{trial}
         </span>
         <div style={{ display: 'flex', gap: '6px' }}>
-          <button className="btn btn-sm" onClick={exportResults} disabled={log.length === 0}>
+          <button className="btn btn-sm" onClick={exportResults} disabled={log.length === 0 || !revealed}>
             Export Session ({log.length})
           </button>
           <button className="btn btn-sm" onClick={nextTrial}>
@@ -128,10 +128,11 @@ export const BlindComparisonPanel: React.FC<BlindComparisonPanelProps> = ({
 
       {!revealed ? (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {busy && <span role="status">Preparing candidate…</span>}
           <span style={{ color: '#92948E', fontSize: '12px' }}>Lock decision &amp; reveal:</span>
-          <button className="btn btn-accent btn-sm" onClick={() => recordDecision('X')}>Prefer X</button>
-          <button className="btn btn-accent btn-sm" onClick={() => recordDecision('Y')}>Prefer Y</button>
-          <button className="btn btn-sm" onClick={() => recordDecision('tie')}>No Preference / Tie</button>
+          <button className="btn btn-accent btn-sm" disabled={busy || dryActive} onClick={() => recordDecision('X')}>Prefer X</button>
+          <button className="btn btn-accent btn-sm" disabled={busy || dryActive} onClick={() => recordDecision('Y')}>Prefer Y</button>
+          <button className="btn btn-sm" disabled={busy || dryActive} onClick={() => recordDecision('tie')}>No Preference / Tie</button>
         </div>
       ) : (
         <div className="notice-bar mono" style={{ color: '#E9E7DF' }}>

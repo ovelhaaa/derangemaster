@@ -59,7 +59,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {telemetry && (
           <div className="status-pill mono" title="AudioWorklet callback time / quantum deadline (not global browser CPU)">
-            Worklet: {telemetry.processTimeMeanUs.toFixed(0)}us ({loadPct.toFixed(1)}%)
+            Worklet: ~{(telemetry.processTimeMeanUs / 1000).toFixed(1)}ms ({loadPct.toFixed(0)}%) · clock {(telemetry.observedClockStepUs ?? 1000) / 1000}ms
           </div>
         )}
 

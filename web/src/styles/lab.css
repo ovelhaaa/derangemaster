@@ -508,3 +508,6 @@ input[type='range'] {
 .harmonic-table td:first-child {
   text-align: left;
 }
+.listening-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 12px; }
+.listening-controls p { flex-basis: 100%; margin: 4px 0; }
+.listening-controls textarea { flex: 1 1 100%; min-height: 64px; background: #1b1e1f; color: #e9e7df; border: 1px solid #555; padding: 10px; font: inherit; }

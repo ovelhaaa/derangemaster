@@ -8,7 +8,7 @@ on:
 
 jobs:
   wasm-and-web:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,12 +28,22 @@ jobs:
         run: |
           emcmake cmake -B build-wasm -DRANGEMASTER_BUILD_WASM=ON -DCMAKE_BUILD_TYPE=Release
           cmake --build build-wasm -j4
+          emcc --version > build-wasm/emscripten-version.txt
       - name: Verify Native/WASM Numerical Equivalence
         run: node tools/analysis/test_wasm_equivalence.mjs
       - name: Sync WASM to Web App & Build
         run: |
           mkdir -p web/src/wasm web/public/wasm
           cp build-wasm/rangemaster_dsp.js web/src/wasm/rangemaster_dsp.js
-          cp build-wasm/rangemaster_dsp.wasm web/src/wasm/rangemaster_dsp.wasm
           cp build-wasm/rangemaster_dsp.wasm web/public/wasm/rangemaster_dsp.wasm
-          cd web && npm ci && npm run typecheck && npm run build
+          node web/scripts/stamp-wasm.mjs
+          cd web && npm ci && npm run typecheck && npm run build && npm test
+      - name: Browser Qualification
+        run: |
+          cd web
+          npx playwright install --with-deps chromium firefox
+          sudo apt-get install -y pulseaudio
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=derangemaster rate=48000
+          pactl set-default-sink derangemaster
+          npm run test:browser

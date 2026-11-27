@@ -1,4 +1,4 @@
-import { instantiateRangemasterWasm, RangemasterWasmModule } from '../wasm/rangemasterWasm';
+import { instantiateRangemasterWasm, RangemasterWasmModule, verifyWasmBytes } from '../wasm/rangemasterWasm';
 import { DspSlotConfig, MonitorMode, SlotId, WorkletTelemetry } from '../state/types';
 import { NOMINAL_DEFAULT_CONFIG } from '../state/presets';
 import { LoadedAudioFile } from './FileSource';
@@ -6,10 +6,12 @@ import { LiveInputInfo, requestLiveInputStream } from './LiveInputSource';
 import { generateTestBuffer } from './TestSignalGenerator';
 
 export interface EngineCallbacks {
+  onConfigApplied?: (config: DspSlotConfig, slot: SlotId, kind: string, restoreRequested?: boolean) => void;
+  onCapture?: (samples: Float32Array) => void;
   onReady: (sampleRate: number) => void;
   onTelemetry: (t: WorkletTelemetry) => void;
   onError: (msg: string) => void;
-  onParamRejected: (reason: string, activeConfig: DspSlotConfig, activeSlot: SlotId) => void;
+  onParamRejected: (reason: string, activeConfig: DspSlotConfig, activeSlot: SlotId, rejectedSlot?: SlotId) => void;
   onContextState: (state: AudioContextState) => void;
   onPlaybackPos: (posSec: number, playing: boolean) => void;
 }
@@ -25,6 +27,15 @@ function makeAuxAmpCurve(samples = 1024): Float32Array<ArrayBuffer> {
 }
 
 export class RangemasterAudioEngine {
+  private requestId = 0;
+  private confirmedRequestId = 0;
+  private workletReady = false;
+  private latestWasRejected = false;
+  private requestedSlot: SlotId = 'A';
+  private startupRequest: Record<string, unknown> | null = null;
+  private captureResolve: ((s: Float32Array) => void) | null = null;
+  private captureReject: ((e: Error) => void) | null = null;
+  private captureTimer: ReturnType<typeof setTimeout> | null = null;
   private ctx: AudioContext | null = null;
   private wasmBinary: ArrayBuffer | null = null;
   private offlineWasm: RangemasterWasmModule | null = null;
@@ -57,6 +68,7 @@ export class RangemasterAudioEngine {
   private monitorMode: MonitorMode = 'direct';
   private monitorVol = 0.75;
   private cabinetIrBuffer: AudioBuffer | null = null;
+  private cabinetIrHash: string | null = null;
 
   constructor(private readonly callbacks: EngineCallbacks) {}
 
@@ -82,6 +94,7 @@ export class RangemasterAudioEngine {
       throw new Error(`Failed to fetch rangemaster_dsp.wasm (${wasmResp.status})`);
     }
     this.wasmBinary = await wasmResp.arrayBuffer();
+    await verifyWasmBytes(this.wasmBinary);
     this.offlineWasm = await instantiateRangemasterWasm(this.wasmBinary.slice(0));
 
     await this.ctx.audioWorklet.addModule(`${baseUrl}worklet/rangemaster-processor.js`);
@@ -95,13 +108,24 @@ export class RangemasterAudioEngine {
     this.workletNode.port.onmessage = (ev: MessageEvent) => {
       const msg = ev.data;
       if (msg.type === 'wasm-ready') {
+        this.workletReady = true;
+        this.callbacks.onConfigApplied?.(initialConfig, initialSlot, 'initialized');
         this.callbacks.onReady(msg.sampleRate);
+        if (this.startupRequest) { this.workletNode?.port.postMessage(this.startupRequest); this.startupRequest = null; }
       } else if (msg.type === 'wasm-error') {
         this.callbacks.onError(msg.error);
       } else if (msg.type === 'telemetry') {
         this.callbacks.onTelemetry(msg.telemetry as WorkletTelemetry);
-      } else if (msg.type === 'param-rejected') {
-        this.callbacks.onParamRejected(msg.reason, msg.activeConfig, msg.activeSlot);
+      } else if (msg.type === 'capture-complete') {
+        if (this.captureTimer) clearTimeout(this.captureTimer);
+        this.captureTimer = null; this.captureReject = null;
+        this.captureResolve?.(msg.samples); this.captureResolve = null;
+      } else if (msg.type === 'config-applied' && msg.requestId > this.confirmedRequestId) {
+        this.confirmedRequestId = msg.requestId;
+        this.callbacks.onConfigApplied?.(msg.activeConfig, msg.activeSlot, msg.kind, msg.requestId === this.requestId || this.latestWasRejected);
+      } else if (msg.type === 'param-rejected' && msg.requestId === this.requestId) {
+        this.latestWasRejected = true;
+        this.callbacks.onParamRejected(msg.reason, msg.activeConfig, msg.activeSlot, this.requestedSlot);
       }
     };
 
@@ -124,8 +148,9 @@ export class RangemasterAudioEngine {
     this.auxShaper.oversample = '2x';
 
     this.convolver = this.ctx.createConvolver();
-    this.convolver.normalize = true;
-    this.convolver.buffer = this.createDefaultSyntheticDebugNoticeIr(this.ctx.sampleRate);
+    this.convolver.normalize = false;
+    this.cabinetIrBuffer = this.createDefaultSyntheticDebugNoticeIr(this.ctx.sampleRate);
+    this.convolver.buffer = this.cabinetIrBuffer;
 
     this.monitorGain = this.ctx.createGain();
     this.monitorGain.gain.value = this.monitorVol;
@@ -208,6 +233,8 @@ export class RangemasterAudioEngine {
     return this.cabinetIrBuffer;
   }
 
+  getCabinetIrHash(): string | null { return this.cabinetIrHash; }
+
   getAnalysers(): {
     input: AnalyserNode | null;
     preMonitor: AnalyserNode | null;
@@ -221,7 +248,29 @@ export class RangemasterAudioEngine {
   }
 
   setConfig(config: DspSlotConfig, slot: SlotId, levelMatchGain = 1.0): void {
-    this.workletNode?.port.postMessage({ type: 'set-config', config, slot, levelMatchGain });
+    this.requestedSlot = slot; this.latestWasRejected = false;
+    const message = { type: 'set-config', requestId: ++this.requestId, config: structuredClone(config), slot, levelMatchGain };
+    if (this.workletReady) this.workletNode?.port.postMessage(message);
+    else this.startupRequest = message;
+  }
+
+  captureReference(seconds = 4): Promise<Float32Array> {
+    if (!this.workletNode || this.ctx?.state !== 'running') return Promise.reject(new Error('Start audio before capture'));
+    if (this.captureResolve) return Promise.reject(new Error('Capture already in progress'));
+    return new Promise((resolve, reject) => {
+      this.captureResolve = resolve;
+      this.captureReject = reject;
+      this.captureTimer = setTimeout(() => this.cancelCapture(), 15000);
+      this.workletNode!.port.postMessage({ type: 'capture-reference', seconds });
+    });
+  }
+
+  cancelCapture(): void {
+    this.workletNode?.port.postMessage({ type: 'cancel-capture' });
+    if (this.captureTimer) clearTimeout(this.captureTimer);
+    this.captureTimer = null;
+    this.captureReject?.(new Error('Capture cancelled or audio context suspended'));
+    this.captureResolve = null; this.captureReject = null;
   }
 
   setBypass(bypassed: boolean): void {
@@ -230,6 +279,10 @@ export class RangemasterAudioEngine {
 
   setLevelMatchGain(gain: number): void {
     this.workletNode?.port.postMessage({ type: 'set-level-match', gain });
+  }
+
+  setLevelMatchGains(gainA: number, gainB: number): void {
+    this.workletNode?.port.postMessage({ type: 'set-level-match', gainA, gainB });
   }
 
   resetDiagnostics(): void {
@@ -251,8 +304,10 @@ export class RangemasterAudioEngine {
   async loadCabinetIrFile(file: File): Promise<string> {
     if (!this.ctx || !this.convolver) throw new Error('Audio engine not initialized');
     const arr = await file.arrayBuffer();
+    const irHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', arr))).map(x => x.toString(16).padStart(2, '0')).join('');
     const irBuf = await this.ctx.decodeAudioData(arr);
     this.cabinetIrBuffer = irBuf;
+    this.cabinetIrHash = irHash;
     this.convolver.buffer = irBuf;
     return file.name;
   }
@@ -437,6 +492,7 @@ export class RangemasterAudioEngine {
   }
 
   dispose(): void {
+    this.cancelCapture();
     this.stop();
     this.disableLiveInput();
     this.workletNode?.disconnect();

@@ -9,6 +9,33 @@ extern "C" {
 
 typedef struct RangemasterHandle RangemasterHandle;
 
+// ABI v1: little-endian WASM, natural alignment 8, size 104. No pointers/bools.
+// apply: 1 success, -1 null, -2 ABI/size, -3 core preparation failure;
+// invalid field: -(100 + zero-based field index), in declaration order.
+typedef struct RangemasterConfigC {
+    uint32_t abiVersion;
+    uint32_t structSize;
+    int32_t engine;
+    int32_t transistor;
+    int32_t oversampling;
+    uint32_t gpAblationMask;
+    double boost;
+    double rangeNf;
+    double inputVolts;
+    double outputRefVolts;
+    double outputTrimDb;
+    double biasTrim;
+    double supplyVolts;
+    double sourceOhms;
+    double loadOhms;
+    int32_t potTaper;
+    int32_t boostLinearApprox;
+} RangemasterConfigC;
+uint32_t rangemaster_get_config_abi_version(void);
+uint32_t rangemaster_get_config_struct_size(void);
+int32_t rangemaster_apply_config(RangemasterHandle*, const RangemasterConfigC*);
+int32_t rangemaster_get_config(const RangemasterHandle*, RangemasterConfigC*);
+
 typedef struct RangemasterDiagnosticsC {
     uint64_t totalCalls;
     uint64_t totalIterations;

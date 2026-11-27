@@ -97,3 +97,41 @@ python tools/analysis/m7_validate_and_aliasing.py
 - [docs/VALIDATION_REPORT.md](docs/VALIDATION_REPORT.md)
 - [docs/BENCHMARK_REPORT.md](docs/BENCHMARK_REPORT.md)
 - [docs/LISTENING_GUIDE.md](docs/LISTENING_GUIDE.md)
+
+## M7.1 stability and listening readiness
+
+The stabilization branch preserves the M7 physical core and adds atomic C ABI v1,
+block-boundary transitions, constant 73-sample laboratory alignment, local guitar
+reference capture, offline Workers, reproducible export manifests and six listening
+sessions. Generated WASM/worklet files are no longer versioned: build C++ first.
+
+```powershell
+./scripts/build-wasm.ps1
+cd web
+npm ci
+npm run build
+npm test
+npx playwright install chromium firefox
+npm run test:browser
+# Optional ten-minute real AudioWorklet qualification:
+$env:RUN_SOAK='1'; npm run test:browser -- --project chromium
+```
+
+Reports: [implementation](docs/M71_IMPLEMENTATION_REPORT.md),
+[worklet audit](docs/M71_AUDIOWORKLET_AUDIT.md),
+[transitions](docs/M71_TRANSITION_VALIDATION.md),
+[browser qualification](docs/M71_BROWSER_BENCHMARK.md),
+[musical protocol](docs/MUSICAL_EVALUATION_PROTOCOL.md).
+
+First listen: GP-AC, OC44 #2, 4.7 nF, Boost 100%, nominal bias/supply, 8x,
+0.35 V/FS as an exploratory starting point. Capture four seconds, loop it, load
+Session 01 and calibrate RMS A/B. Record ties freely; the engine choice remains
+musical. The intended [public lab](https://ovelhaaa.github.io/derangemaster/)
+returned 404 during M7.1; enable GitHub Actions as the repository's Pages source.
+
+Qualification: 9 native tests, 1326 stress cases and 18 WASM/web tests pass. Both
+Chromium and Firefox pass Worker/audio integration and production-subpath smoke.
+Ten-minute stress runs have zero observed numeric failures, but the reduced-replay
+run still measures 1.024% callbacks over budget with a 1 ms clock. See the browser
+report before treating this as strict real-time qualification on your device.
+Review: [draft PR #1](https://github.com/ovelhaaa/derangemaster/pull/1).

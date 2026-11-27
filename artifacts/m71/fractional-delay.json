@@ -1,0 +1,74 @@
+[
+  {
+    "frac": 0.125,
+    "method": "linear",
+    "maxMagnitudeErrorDb": 2.278199441177776,
+    "maxPhaseErrorRadians": 0.24591583739078565
+  },
+  {
+    "frac": 0.125,
+    "method": "cubic",
+    "maxMagnitudeErrorDb": 5.411699327142777,
+    "maxPhaseErrorRadians": 0.36101032387775317
+  },
+  {
+    "frac": 0.125,
+    "method": "sinc63",
+    "maxMagnitudeErrorDb": 0.0002066288465982721,
+    "maxPhaseErrorRadians": 0.00006986292751565149
+  },
+  {
+    "frac": 0.25,
+    "method": "linear",
+    "maxMagnitudeErrorDb": 5.225307635650601,
+    "maxPhaseErrorRadians": 0.4243456459552148
+  },
+  {
+    "frac": 0.25,
+    "method": "cubic",
+    "maxMagnitudeErrorDb": 4.720156918160127,
+    "maxPhaseErrorRadians": 0.9995827943106993
+  },
+  {
+    "frac": 0.25,
+    "method": "sinc63",
+    "maxMagnitudeErrorDb": 0.0007230613591051588,
+    "maxPhaseErrorRadians": 0.00010806026493337395
+  },
+  {
+    "frac": 0.3125,
+    "method": "linear",
+    "maxMagnitudeErrorDb": 7.029134210897913,
+    "maxPhaseErrorRadians": 0.4595104695718498
+  },
+  {
+    "frac": 0.3125,
+    "method": "cubic",
+    "maxMagnitudeErrorDb": 3.021443572017934,
+    "maxPhaseErrorRadians": 1.096983578720332
+  },
+  {
+    "frac": 0.3125,
+    "method": "sinc63",
+    "maxMagnitudeErrorDb": 0.0010193320213655371,
+    "maxPhaseErrorRadians": 0.00010938819987549309
+  },
+  {
+    "frac": 0.5,
+    "method": "linear",
+    "maxMagnitudeErrorDb": 11.74007538861322,
+    "maxPhaseErrorRadians": 2.220446049250313e-16
+  },
+  {
+    "frac": 0.5,
+    "method": "cubic",
+    "maxMagnitudeErrorDb": 0.7378618847835222,
+    "maxPhaseErrorRadians": 0.947202202746108
+  },
+  {
+    "frac": 0.5,
+    "method": "sinc63",
+    "maxMagnitudeErrorDb": 0.0016218756137773719,
+    "maxPhaseErrorRadians": 0.000049255098749423354
+  }
+]

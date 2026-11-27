@@ -7,7 +7,7 @@ interface ExportModalProps {
   monitorMode: MonitorMode;
   busy: boolean;
   onClose: () => void;
-  onExport: (opts: { target: 'dry' | 'A' | 'B'; levelMatched: boolean; includeMonitoring: boolean }) => void;
+  onExport: (opts: { mode: 'raw' | 'latency-compensated' | 'full-tail'; target: 'dry' | 'A' | 'B'; levelMatched: boolean; includeMonitoring: boolean }) => void;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -18,6 +18,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   onClose,
   onExport,
 }) => {
+  const [mode, setMode] = useState<'raw' | 'latency-compensated' | 'full-tail'>('raw');
   const [target, setTarget] = useState<'dry' | 'A' | 'B'>('A');
   const [matched, setMatched] = useState(levelMatched);
   const [includeMon, setIncludeMon] = useState(false);
@@ -39,6 +40,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+          <select aria-label="Export mode" value={mode} onChange={e => setMode(e.target.value as typeof mode)}>
+            <option value="raw">Raw · original latency and duration</option>
+            <option value="latency-compensated">Latency Compensated · useful input duration</option>
+            <option value="full-tail">Full Tail · bounded 2 second circuit tail</option>
+          </select>
           <div className="field-group">
             <span className="field-label">Render Target</span>
             <select value={target} onChange={(e) => setTarget(e.target.value as 'dry' | 'A' | 'B')}>
@@ -51,8 +57,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
             <input
               type="checkbox"
-              checked={matched}
-              disabled={target === 'dry'}
+              checked={matched && mode !== 'raw'}
+              disabled={target === 'dry' || mode === 'raw'}
               onChange={(e) => setMatched(e.target.checked)}
             />
             <span>Apply post-circuit Level-Match scalar gain</span>
@@ -61,8 +67,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
             <input
               type="checkbox"
-              checked={includeMon}
-              disabled={monitorMode === 'direct'}
+              checked={includeMon && mode !== 'raw'}
+              disabled={mode === 'raw'}
+
               onChange={(e) => setIncludeMon(e.target.checked)}
             />
             <span>
@@ -76,7 +83,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <button
             className="btn btn-accent"
             disabled={busy}
-            onClick={() => onExport({ target, levelMatched: matched, includeMonitoring: includeMon })}
+            onClick={() => onExport({ mode, target, levelMatched: mode === 'raw' ? false : matched, includeMonitoring: mode === 'raw' ? false : includeMon })}
           >
             {busy ? 'Rendering...' : 'Download Float32 WAV + Manifest'}
           </button>

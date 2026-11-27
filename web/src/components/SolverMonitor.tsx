@@ -36,8 +36,8 @@ export const SolverMonitor: React.FC<SolverMonitorProps> = ({
           <div className="kv-val mono">{telemetry ? `${telemetry.internalSampleRate} Hz (${config.oversampling}x)` : '--'}</div>
         </div>
         <div className="kv-card">
-          <div className="kv-label">Algorithmic Latency</div>
-          <div className="kv-val mono">{telemetry ? `${telemetry.latencySamples.toFixed(4)} samples` : '--'}</div>
+          <div className="kv-label">Core / Laboratory Latency</div>
+          <div className="kv-val mono">{telemetry ? `${telemetry.internalLatencySamples?.toFixed(4) ?? '--'} / ${telemetry.latencySamples} samples` : '--'}</div>
         </div>
         <div className="kv-card">
           <div className="kv-label">Mean / Max Iterations</div>
@@ -87,7 +87,7 @@ export const SolverMonitor: React.FC<SolverMonitorProps> = ({
           <div className="kv-label">Worklet Callback (Mean / Max)</div>
           <div className="kv-val mono">
             {telemetry
-              ? `${telemetry.processTimeMeanUs.toFixed(0)} / ${telemetry.processTimeMaxUs.toFixed(0)} us (budget ${telemetry.quantumBudgetUs.toFixed(0)} us)`
+              ? `~${(telemetry.processTimeMeanUs / 1000).toFixed(1)} / ${(telemetry.processTimeMaxUs / 1000).toFixed(1)} ms; clock ${telemetry.clock ?? 'unknown'} step ${(telemetry.observedClockStepUs ?? 1000) / 1000} ms`
               : '--'}
           </div>
         </div>
